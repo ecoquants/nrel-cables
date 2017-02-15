@@ -1,0 +1,78 @@
+---
+title: "Submarine Cable Analysis for Marine Renewable Energy Development"
+csl: apa.csl
+output:
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+bibliography: nrel-cables.bib
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+if (opts_knit$get("rmarkdown.pandoc.to") == 'html'){
+  opts_chunk$set(echo=T)
+} else {
+  opts_chunk$set(echo=F)
+}
+```
+
+opts_knit$get("rmarkdown.pandoc.to"): `r knitr::opts_knit$get("rmarkdown.pandoc.to")`
+
+## Introduction
+
+try refs [@communicationssecurityreliabilityandinteroperabilitycounciliv_clustering_2016; @communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014; @amante_offshore_2016]
+
+## Covariates
+
+- depth
+
+
+## Data
+
+### Submarine Cables
+
+- [North American Submarine Cable Association (NASCA)](https://www.n-a-s-c-a.org/)
+- data.noaa.gov:
+    * [NOAA Charted Submarine cables in the United States as of December 2012 - NOAA Data Catalog](https://data.noaa.gov/dataset/noaa-charted-submarine-cables-in-the-united-states-as-of-december-2012)
+    * [North American Submarine Cable Association (NASCA) Submarine Cables - NOAA Data Catalog](https://data.noaa.gov/dataset/north-american-submarine-cable-association-nasca-submarine-cables)
+
+## Maps
+
+```{r, warning=F, message=F}
+library(tidyverse)
+library(rgdal)
+library(rgeos)
+library(leaflet)
+
+#setwd('~/github/nrel-cables')
+gdb = '../data/SubmarineCables/NOAAChartedSubmarineCables.gdb'
+fc = ogrListLayers(gdb)[[1]]
+lns = readOGR(dsn=gdb, layer=fc, verbose=F)
+
+# TODO: move these danglers to Pacific left of existing
+idx = gCentroid(lns, byid=T) %>% coordinates() %>% .[,1] < 100
+lns = subset(lns, idx)
+
+leaflet(lns) %>%
+  addProviderTiles('Esri.OceanBasemap') %>%  # 'Esri.OceanBasemap'/'Stamen.TonerLite'
+  # see [all providers](http://leaflet-extras.github.io/leaflet-providers/preview/index.html)
+  addPolylines(
+    popup = ~sprintf("scaleBand: %s<br>description: %s<br>effectiveDate: %s", scaleBand, description, effectiveDate))
+```
+
+
+## Cable Sharing?
+
+## Ecological
+
+[@pelc_renewable_2002; @gill_offshore_2005; @inger_marine_2009; @lester_evaluating_2013; @willsteed_assessing_2017]
+
+
+## References

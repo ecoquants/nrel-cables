@@ -1,0 +1,385 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<metadata>
+  <idinfo>
+    <citation>
+      <citeinfo>
+        <origin>Department of Commerce (DOC), National Oceanic and Atmospheric Administration (NOAA), National Ocean Service (NOS), Office for Coastal Management (OCM)</origin>
+        <pubdate>20160713</pubdate>
+        <title>NOAA Charted Submarine cables in the United States as of December 2012</title>
+        <pubinfo>
+          <pubplace>Charleston, SC</pubplace>
+          <publish>NOAA's Ocean Service, Office for Coastal Management (OCM)</publish>
+        </pubinfo>
+        <onlink>ftp://ftp.coast.noaa.gov/pub/MSP/SubmarineCables.zip</onlink>
+        <onlink>https://www.coast.noaa.gov/ArcGIS/rest/services/MarineCadastre/NavigationAndMarineTransportation/MapServer</onlink>
+        <onlink>http://marinecadastre.gov/data/</onlink>
+        <onlink>https://www.coast.noaa.gov/</onlink>
+      </citeinfo>
+    </citation>
+    <descript>
+      <abstract>These data depict the occurrence of submarine cables in and around U.S. navigable waters. The geographic extent of these data is greater than the “NASCA Submarine Cables” dataset. The purpose of these data products are to support coastal planning at the regional and national scale. These data are derived from 2010 NOAA Electronic Navigational Charts (ENCs) and 2009 NOAA Raster Navigational Charts (RNCs). Abandoned cables, or cables that have been removed may appear within this data set. Features defined as cables were compiled from the original sources, exclusive of those features noted as 'cable areas'.</abstract>
+      <purpose>To support coastal and ocean planning and other activities pursuant to the Energy Policy Act, Coastal Zone Management Act, Magnuson-Stevens Fishery Conservation and Management Act, National Environmental Policy Act, Rivers and Harbors Act and the Submerged Lands Act.</purpose>
+    </descript>
+    <timeperd>
+      <timeinfo>
+        <rngdates>
+          <begdate>2011</begdate>
+          <enddate>2012</enddate>
+        </rngdates>
+      </timeinfo>
+      <current>ground condition</current>
+    </timeperd>
+    <status>
+      <progress>Complete</progress>
+      <update>As needed</update>
+    </status>
+    <spdom>
+      <bounding>
+        <westbc>-179.999989</westbc>
+        <eastbc>179.999989</eastbc>
+        <northbc>61.194280</northbc>
+        <southbc>5.000000</southbc>
+      </bounding>
+    </spdom>
+    <keywords>
+      <theme>
+        <themekt>ISO 19115 Topic Category</themekt>
+        <themekey>oceans</themekey>
+      </theme>
+      <theme>
+        <themekt>None</themekt>
+        <themekey>submarine cables</themekey>
+        <themekey>underwater cables</themekey>
+        <themekey>offshore cables</themekey>
+      </theme>
+      <place>
+        <placekt>None</placekt>
+        <placekey>National</placekey>
+        <placekey>United States</placekey>
+        <placekey>Alaska</placekey>
+        <placekey>Hawaii</placekey>
+        <placekey>Puerto Rico</placekey>
+        <placekey>US Pacific Territories</placekey>
+      </place>
+    </keywords>
+    <accconst>None</accconst>
+    <useconst>These data are intended for coastal and ocean use planning. Not for navigation.</useconst>
+    <ptcontac>
+      <cntinfo>
+        <cntorgp>
+          <cntorg>NOAA Office for Coastal Management</cntorg>
+        </cntorgp>
+        <cntaddr>
+          <addrtype>mailing and physical</addrtype>
+          <address>2234 South Hobson Avenue</address>
+          <city>Charleston</city>
+          <state>SC</state>
+          <postal>29405-2413</postal>
+        </cntaddr>
+        <cntvoice>843-740-1202</cntvoice>
+        <cntemail>coastal.info@noaa.gov</cntemail>
+      </cntinfo>
+    </ptcontac>
+  </idinfo>
+  <dataqual>
+    <attracc>
+      <attraccr>The attributes in this dataset are believed to be accurate.</attraccr>
+    </attracc>
+    <logic>These data are believed to be logically consistent. Geometry is topologically clean.</logic>
+    <complete>Spatial and attribute properties are believed to be complete, some attribute information has been standardized. Geometric thresholds from original data are preserved. No tests have been completed for exhaustiveness.</complete>
+    <posacc>
+      <horizpa>
+        <horizpar>Maximum scale of intended use is 1:80,000.</horizpar>
+      </horizpa>
+    </posacc>
+    <lineage>
+      <srcinfo>
+        <srccite>
+          <citeinfo>
+            <origin>Department of Commerce (DOC), National Oceanic and Atmospheric Administration (NOAA), National Ocean Service (NOS), Office of Coast Survey (OCS)</origin>
+            <pubdate>2010</pubdate>
+            <title>Electronic Navigational Charts (ENCs)</title>
+            <geoform>vector digital data</geoform>
+            <pubinfo>
+              <pubplace>Silver Spring, MD</pubplace>
+              <publish>NOAA's Ocean Service, Office of Coast Survey</publish>
+            </pubinfo>
+            <onlink>http://www.nauticalcharts.noaa.gov/mcd/enc/index.htm</onlink>
+          </citeinfo>
+        </srccite>
+        <typesrc>online</typesrc>
+        <srctime>
+          <timeinfo>
+            <sngdate>
+              <caldate>2010</caldate>
+            </sngdate>
+          </timeinfo>
+          <srccurr>publication date</srccurr>
+        </srctime>
+        <srccitea>NOAA OCS ENC 2010</srccitea>
+        <srccontr>Spatial data for submarine cables</srccontr>
+      </srcinfo>
+      <srcinfo>
+        <srccite>
+          <citeinfo>
+            <origin>Department of Commerce (DOC), National Oceanic and Atmospheric Administration (NOAA), National Ocean Service (NOS), Office of Coast Survey (OCS)</origin>
+            <pubdate>2009</pubdate>
+            <title>Raster Nautical Chart (RNC)</title>
+            <geoform>raster digital data</geoform>
+            <pubinfo>
+              <pubplace>Silver Spring, MD</pubplace>
+              <publish>NOAA's Ocean Service, Office of Coast Survey</publish>
+            </pubinfo>
+            <onlink>http://egisws02.nos.noaa.gov/ArcGIS/rest/services/RNC</onlink>
+          </citeinfo>
+        </srccite>
+        <typesrc>online</typesrc>
+        <srctime>
+          <timeinfo>
+            <sngdate>
+              <caldate>2009</caldate>
+            </sngdate>
+          </timeinfo>
+          <srccurr>publication date</srccurr>
+        </srctime>
+        <srccitea>NOAA OCS RNC 2009</srccitea>
+        <srccontr>Helped locate features not otherwise found in the original submarine cables data.</srccontr>
+      </srcinfo>
+      <srcinfo>
+        <srccite>
+          <citeinfo>
+            <origin>Department of Commerce (DOC), National Oceanic and Atmospheric Administration (NOAA), National Ocean Service (NOS), Office of Coast Survey (OCS)</origin>
+            <pubdate>2012</pubdate>
+            <title>Raster Nautical Charts (RNC)</title>
+            <geoform>raster digital data</geoform>
+            <pubinfo>
+              <pubplace>Silver Spring, MD</pubplace>
+              <publish>NOAA's Ocean Service, Office of Coast Survey</publish>
+            </pubinfo>
+            <onlink>http://egisws02.nos.noaa.gov/ArcGIS/rest/services/RNC</onlink>
+          </citeinfo>
+        </srccite>
+        <typesrc>online</typesrc>
+        <srctime>
+          <timeinfo>
+            <sngdate>
+              <caldate>2012</caldate>
+            </sngdate>
+          </timeinfo>
+          <srccurr>publication date</srccurr>
+        </srctime>
+        <srccitea>NOAA OCS RNC 2012</srccitea>
+        <srccontr>Helped locate features not otherwise found in the original submarine cables data.</srccontr>
+      </srcinfo>
+      <srcinfo>
+        <srccite>
+          <citeinfo>
+            <origin>MarineCadastre.gov</origin>
+            <pubdate>20130322</pubdate>
+            <title>NOAA Charted Submarine Cables</title>
+            <onlink>ftp://ftp.coast.noaa.gov/pub/MSP/NOAAChartedSubmarineCables.zip</onlink>
+            <onlink>http://marinecadastre.gov/data/</onlink>
+          </citeinfo>
+        </srccite>
+        <typesrc>online</typesrc>
+        <srctime>
+          <timeinfo>
+            <rngdates>
+              <begdate>2011</begdate>
+              <enddate>2012</enddate>
+            </rngdates>
+          </timeinfo>
+          <srccurr>ground condition</srccurr>
+        </srctime>
+        <srccitea>MarineCadastre.gov Data Registry</srccitea>
+        <srccontr>Provided the latest version of the data set geometry.</srccontr>
+      </srcinfo>
+      <procstep>
+        <procdesc>Dataset copied from online linkage (http://ocs-spatial.ncd.noaa.gov/viewer.htm). Create a development file geodatabase and feature class/es. Load sources into respective feature classes. During load, set layer tolerance and precision: for projected coordinates in meters use (0.1 and 0.01), for geographic coordinates use the default setting of a 9.3 FGDB in High Precision (0.000000008983153) - see Environment Properties/General Settings. Digitize, retain, or remove necessary features from original data sources. Create attribute fields using the specifications provided in the data dictionary. Populate attribute contents using existing fields and metadata.</procdesc>
+        <srcused>NOAA OCS ENC 2010</srcused>
+        <srcused>NOAA OCS RNC 2009</srcused>
+        <procdate>20111116</procdate>
+        <proccont>
+          <cntinfo>
+            <cntorgp>
+              <cntorg>NOAA Office for Coastal Management</cntorg>
+            </cntorgp>
+            <cntaddr>
+              <addrtype>mailing and physical</addrtype>
+              <address>2234 South Hobson Avenue</address>
+              <city>Charleston</city>
+              <state>SC</state>
+              <postal>29405-2413</postal>
+            </cntaddr>
+            <cntvoice>843-740-1202</cntvoice>
+            <cntemail>coastal.info@noaa.gov</cntemail>
+          </cntinfo>
+        </proccont>
+      </procstep>
+      <procstep>
+        <procdesc>.  Create a new map document in ArcGIS 10.0 and bring in the Raster Nautical Chart (RNC) service from:  less than http://egisws02.nos.noaa.gov/ArcGIS/rest/services/RNC&gt;
+.  Add existing feature class from SDE
+.  Compare the RNCs with the existing feature class to determine discrepancies
+.  Create bookmarks in ArcMap of missing features
+.  Update the existing feature class by adding features that are bookmarked
+.  Use the existing symbology of the features to duplicate symbology for newly created features 
+.  Edit identified features, including descriptions and related fields in the attribute table.
+.  Have data quality reviewed by senior technical lead</procdesc>
+        <srcused>NOAA OCS RNC 2012</srcused>
+        <procdate>2012</procdate>
+        <proccont>
+          <cntinfo>
+            <cntorgp>
+              <cntorg>NOAA Office for Coastal Management</cntorg>
+            </cntorgp>
+            <cntaddr>
+              <addrtype>mailing and physical</addrtype>
+              <address>2234 South Hobson Avenue</address>
+              <city>Charleston</city>
+              <state>SC</state>
+              <postal>29405-2413</postal>
+            </cntaddr>
+            <cntvoice>843-740-1202</cntvoice>
+            <cntemail>coastal.info@noaa.gov</cntemail>
+          </cntinfo>
+        </proccont>
+      </procstep>
+      <procstep>
+        <procdesc>1. Download current data layer from MarineCadastre.gov. 2. Assess attribute table, fix typos, grammar issues, and standardize attributes where these were easily discernable. For empty attributes populated these with "Not Available" or "Null".  3. Updated metadata.</procdesc>
+        <procdate>201602</procdate>
+      </procstep>
+      <procstep>
+        <procdesc>1. Changed name from "Submarine Cables" to "NOAA Charted Submarine Cables". 2. Updated description. 3. Updated metadata.</procdesc>
+        <procdate>201607</procdate>
+      </procstep>
+    </lineage>
+  </dataqual>
+  <spdoinfo>
+    <direct>Vector</direct>
+  </spdoinfo>
+  <spref>
+    <horizsys>
+      <geograph>
+        <latres>0.000001</latres>
+        <longres>0.000001</longres>
+        <geogunit>Decimal degrees</geogunit>
+      </geograph>
+      <geodetic>
+        <horizdn>North American Datum of 1983</horizdn>
+        <ellips>Geodetic Reference System 1980</ellips>
+        <semiaxis>6378137.000000</semiaxis>
+        <denflat>298.257222</denflat>
+      </geodetic>
+    </horizsys>
+  </spref>
+  <eainfo>
+    <detailed>
+      <enttyp>
+        <enttypl>NOAA Charted Submarine Cables</enttypl>
+        <enttypd>NOAA charted submarine cables within and connecting the marine waters of the United States</enttypd>
+        <enttypds>NOAA Office for Coastal Management</enttypds>
+      </enttyp>
+      <attr>
+        <attrlabl>OBJECTID</attrlabl>
+        <attrdef>Internal feature number.</attrdef>
+        <attrdefs>ESRI</attrdefs>
+        <attrdomv>
+          <udom>Sequential unique whole numbers that are automatically generated.</udom>
+        </attrdomv>
+        <begdatea>2011</begdatea>
+        <enddatea>2012</enddatea>
+      </attr>
+      <attr>
+        <attrlabl>Shape</attrlabl>
+        <attrdef>Feature geometry.</attrdef>
+        <attrdefs>ESRI</attrdefs>
+        <attrdomv>
+          <udom>Coordinates defining the features.</udom>
+        </attrdomv>
+        <begdatea>2011</begdatea>
+        <enddatea>2012</enddatea>
+      </attr>
+      <attr>
+        <attrlabl>scaleBand</attrlabl>
+        <attrdef>Scale band the feature was acquired from via the Electronic Navigational Charts or the Raster Navigational Charts</attrdef>
+        <attrdefs>NOAA Office for Coastal Management</attrdefs>
+        <attrdomv>
+          <udom>Values unique to the feature</udom>
+        </attrdomv>
+        <begdatea>2011</begdatea>
+        <enddatea>2012</enddatea>
+      </attr>
+      <attr>
+        <attrlabl>description</attrlabl>
+        <attrdef>Any descriptive material related to the feature, acquired from the attributes from the ENC</attrdef>
+        <attrdefs>NOAA Office for Coastal Management</attrdefs>
+        <attrdomv>
+          <udom>Values unique to the feature</udom>
+        </attrdomv>
+        <begdatea>2011</begdatea>
+        <enddatea>2012</enddatea>
+      </attr>
+      <attr>
+        <attrlabl>effectiveDate</attrlabl>
+        <attrdef>Date the feature was created or most currently represents</attrdef>
+        <attrdefs>NOAA Office for Coastal Management</attrdefs>
+        <attrdomv>
+          <udom>Values unique to the feature</udom>
+        </attrdomv>
+        <begdatea>2011</begdatea>
+        <enddatea>2012</enddatea>
+      </attr>
+      <attr>
+        <attrlabl>Shape_Length</attrlabl>
+        <attrdef>Length of feature in internal units.</attrdef>
+        <attrdefs>ESRI</attrdefs>
+        <attrdomv>
+          <udom>Positive real numbers that are automatically generated.</udom>
+        </attrdomv>
+        <begdatea>2011</begdatea>
+        <enddatea>2012</enddatea>
+      </attr>
+    </detailed>
+  </eainfo>
+  <distinfo>
+    <distrib>
+      <cntinfo>
+        <cntorgp>
+          <cntorg>NOAA Office for Coastal Management</cntorg>
+        </cntorgp>
+        <cntaddr>
+          <addrtype>mailing and physical</addrtype>
+          <address>2234 South Hobson Avenue</address>
+          <city>Charleston</city>
+          <state>SC</state>
+          <postal>29405-2413</postal>
+        </cntaddr>
+        <cntvoice>843-740-1202</cntvoice>
+        <cntemail>coastal.info@noaa.gov</cntemail>
+      </cntinfo>
+    </distrib>
+    <resdesc>Downloadable Data</resdesc>
+    <distliab>NOAA makes no warranties or representations whatsoever regarding the availability, quality, accuracy, content, completeness or suitability for the user's needs of such information. The services, information, and data made available on the Multipurpose Marine Cadastre web site are provided "as is" without warranties of any kind. These data are intended for coastal and ocean use planning. Not for navigation.</distliab>
+  </distinfo>
+  <metainfo>
+    <metd>20150108</metd>
+    <metc>
+      <cntinfo>
+        <cntorgp>
+          <cntorg>NOAA Office for Coastal Management</cntorg>
+        </cntorgp>
+        <cntaddr>
+          <addrtype>mailing and physical</addrtype>
+          <address>2234 South Hobson Avenue</address>
+          <city>Charleston</city>
+          <state>SC</state>
+          <postal>29405-2413</postal>
+        </cntaddr>
+        <cntvoice>843-740-1202</cntvoice>
+        <cntemail>coastal.info@noaa.gov</cntemail>
+      </cntinfo>
+    </metc>
+    <metstdn>FGDC Content Standard for Digital Geospatial Metadata</metstdn>
+    <metstdv>FGDC-STD-001-1998</metstdv>
+  </metainfo>
+</metadata>

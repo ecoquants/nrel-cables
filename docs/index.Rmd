@@ -1,0 +1,14 @@
+---
+title: "NREL Cable Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Here is the report in various formats for different purposes:
+
+- [report.**html**](./report.html): interactive, online viewing
+- [report.**docx**](./report.docx): track changes with colleagues to review
+- [report.**pdf**](./report.pdf): final portable, static document 
