@@ -13,7 +13,7 @@ Here's the current draft report in various formats:
 
 ### References
 
-See references in the [Zotero group nrel-cables](https://www.zotero.org/groups/nrel-cables/items).
+See references in the [Zotero group nrel-cables](https://www.zotero.org/groups/nrel-cables/items)
 
 ## Project Management
 
