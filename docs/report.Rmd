@@ -2,11 +2,11 @@
 title: "Submarine Cable Analysis for Marine Renewable Energy Development"
 csl: apa.csl
 output:
-  word_document:
+  bookdown::word_document2:
     toc: yes
-  pdf_document:
+  bookdown::pdf_document2:
     toc: yes
-  html_document:
+  bookdown::html_document2:
     code_folding: hide
     toc: yes
     toc_float: yes
@@ -15,6 +15,9 @@ bibliography: nrel-cables.bib
 
 ```{r setup, include=FALSE}
 library(knitr)
+library(tidyverse)
+
+opts_chunk$set(warning=F, message=F)
 
 if (opts_knit$get("rmarkdown.pandoc.to") == 'html'){
   opts_chunk$set(echo=T)
@@ -23,7 +26,7 @@ if (opts_knit$get("rmarkdown.pandoc.to") == 'html'){
 }
 ```
 
-opts_knit$get("rmarkdown.pandoc.to"): `r knitr::opts_knit$get("rmarkdown.pandoc.to")`
+format: `r knitr::opts_knit$get("rmarkdown.pandoc.to")`
 
 ## Introduction
 
@@ -33,8 +36,15 @@ try refs [@communicationssecurityreliabilityandinteroperabilitycounciliv_cluster
 
 - depth
 
-
 ## Data
+
+See Table \@ref(tab:data-sources).
+
+```{r data-sources, tidy=F}
+read_csv('../data/data_sources.csv') %>%
+  kable(
+    caption = 'Data sources from preliminary report.', booktabs=T)
+```
 
 ### Submarine Cables
 
@@ -45,8 +55,9 @@ try refs [@communicationssecurityreliabilityandinteroperabilitycounciliv_cluster
 
 ## Maps
 
-```{r, warning=F, message=F}
-library(tidyverse)
+See Figure \@ref(fig:map).
+
+```{r map, fig.cap='Map of NOAA Charted Submarine cables in the United States as of December 2012.'}
 library(rgdal)
 library(rgeos)
 library(leaflet)
