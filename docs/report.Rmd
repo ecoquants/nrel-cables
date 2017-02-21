@@ -2,14 +2,16 @@
 title: "Submarine Cable Analysis for Marine Renewable Energy Development"
 csl: apa.csl
 output:
-  bookdown::word_document2:
-    toc: yes
-  bookdown::pdf_document2:
-    toc: yes
   bookdown::html_document2:
     code_folding: hide
+    number_sections: yes
     toc: yes
+    toc_depth: 4
     toc_float: yes
+  bookdown::pdf_document2:
+    toc: yes
+  bookdown::word_document2:
+    toc: yes
 bibliography: nrel-cables.bib
 ---
 
@@ -26,15 +28,45 @@ if (opts_knit$get("rmarkdown.pandoc.to") == 'html'){
 }
 ```
 
-format: `r knitr::opts_knit$get("rmarkdown.pandoc.to")`
+# Introduction
 
-## Introduction
+Previous preliminary work [@amante_offshore_2016] and a couple industry reports [@communicationssecurityreliabilityandinteroperabilitycounciliv_clustering_2016; @communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014] inform this report.
 
-try refs [@communicationssecurityreliabilityandinteroperabilitycounciliv_clustering_2016; @communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014; @amante_offshore_2016]
+## Importance of Marine Renewable Energy
 
-## Covariates
+-  Marine renewables are an important off
 
-- depth
+- organizations:
+    - ICPC: International Cable Protection Committee
+    - NASCA: North American Submarine Cable Association
+
+## Importance of Submarine Cables
+
+- frequency of repair?
+
+## Minimizing Conflict through Spatial Avoidance
+
+"An effective submarine cable protection regime must account for the physical characteristics of submarine cables and the mechanical characteristics of the installation vessels and tools. These characteristics—along with weather, sea, and seabed conditions—greatly determine the specifics of a given cable installation or repair." [@communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014]
+
+- Overlap of cables an issue? Yes
+
+    "Clustering of Submarine Cable Systems: The clustering of submarine cables along particular routes (whether to avoid unfavorable sea floor topography, natural hazards, or man-made hazards such as dredging and dumping areas, fishing grounds, and energy infrastructure) increases the risk that installation or maintenance of one cable will cause direct physical disturbance to another, such as with plowing and grappling operations." [@communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014]
+
+
+## Benefits of Cooperation
+
+- Are cost savings possible through sharing cable infrastructure & maintenance between marine renewable energy transmission and existing submarine cables? 
+
+- Direct ecological benefits can result from developing offshore energy, such as de facto reserve creation and creation of hard surfaces for habitat forming species. Are other benefits possible with coordinate marine spatial planning, particularly between cable and renewable industries?
+
+[@pelc_renewable_2002; @gill_offshore_2005; @inger_marine_2009; @lester_evaluating_2013; @willsteed_assessing_2017]
+
+
+# Methods
+
+## Study Area
+
+US EEZ for Pacific and Atlantic. Alaska & Hawaii?
 
 ## Data
 
@@ -52,8 +84,6 @@ read_csv('../data/data_sources.csv') %>%
 - data.noaa.gov:
     * [NOAA Charted Submarine cables in the United States as of December 2012 - NOAA Data Catalog](https://data.noaa.gov/dataset/noaa-charted-submarine-cables-in-the-united-states-as-of-december-2012)
     * [North American Submarine Cable Association (NASCA) Submarine Cables - NOAA Data Catalog](https://data.noaa.gov/dataset/north-american-submarine-cable-association-nasca-submarine-cables)
-
-## Maps
 
 See Figure \@ref(fig:map).
 
@@ -78,12 +108,63 @@ leaflet(lns) %>%
     popup = ~sprintf("scaleBand: %s<br>description: %s<br>effectiveDate: %s", scaleBand, description, effectiveDate))
 ```
 
+### Renewable Energy
 
-## Cable Sharing?
+NREL.
 
-## Ecological
+## Seperation Zones for Routing New Cables
 
-[@pelc_renewable_2002; @gill_offshore_2005; @inger_marine_2009; @lester_evaluating_2013; @willsteed_assessing_2017]
+"ICPC Recommendation 2 No. 10: parallel submarine cables maintain a separation distance of the lesser of 3 times depth of water or (where not achievable) 2 times the depth of water following consultation and agreement between affected parties — a separation standard the principles of which also apply to spacing of submarine cables and other marine infrastructure"
+
+At least 2 seperation zones based on depth:
+
+1. **Minimum**:  2 times the depth of water
+
+1. **Recommended**: 3 times depth of water
+
+Psudocode:
+
+```
+# convert depth (GEBCO 30 sec resolution) to polygons of cells
+depth_cells = as.polygon(depth_raster)
+
+# intersect cables with depth cells
+cable_cells = intersect(cables_lines, depth_cells)
+
+# buffer based on depth
+cables_buffers = list()
+for (x in unique(cable_cells$depth)){
+
+  cables_buffers[str(x)] = cable_cells %>%
+    subset(depth == x) %>%
+    buffer(x)
+
+}
+cable_buf = merge(cables_buffers) 
+
+# smooth out jagged edges between cells
+cable_buf = simplify(cable_buf)
+```
+
+## Proximity Zones for Siting New Facilities
+
+"ICPC Recommendation 13 No. 2, which establishes a methodology for determining site-specific proximity limits between submarine cables and offshore wind facilities and a default separation distance in shallower waters of 500 meters on either side of an in-service submarine cable — a separation standard the principles of which also apply to other offshore renewable energy projects."
+    
+"Subsea Cables UK Guideline No. 6 (endorsed by NASCA), which establishes principles for determining safe proximity distances and negotiating proximity agreements between offshore wind farms and submarine cables and reflects extensive experience in the United Kingdom with managing spatial conflicts between offshore wind farms and submarine cables."
+
+- separation distances:
+
+## Overlay with Existing Renewable Energy
+
+Extract absolute and percent area overlap between zones and renewable energy potential areas, possibly at various depth bins.
+
+# Results
 
 
-## References
+# Conclusions 
+
+## Communication with Stakeholders
+
+Products will be online and readily digestable by fisherman and other stakeholders.
+
+# References
