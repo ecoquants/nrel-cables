@@ -112,11 +112,11 @@ leaflet(lns) %>%
 
 NREL.
 
-## Seperation Zones for Routing New Cables
+## Separation Zones for Routing New Cables
 
 "ICPC Recommendation 2 No. 10: parallel submarine cables maintain a separation distance of the lesser of 3 times depth of water or (where not achievable) 2 times the depth of water following consultation and agreement between affected parties — a separation standard the principles of which also apply to spacing of submarine cables and other marine infrastructure"
 
-At least 2 seperation zones based on depth:
+At least 2 separation zones based on depth:
 
 1. **Minimum**:  2 times the depth of water
 
@@ -146,13 +146,35 @@ cable_buf = merge(cables_buffers)
 cable_buf = simplify(cable_buf)
 ```
 
-## Proximity Zones for Siting New Facilities
+## Avoidance Zones for Siting New Facilities
 
 "ICPC Recommendation 13 No. 2, which establishes a methodology for determining site-specific proximity limits between submarine cables and offshore wind facilities and a default separation distance in shallower waters of 500 meters on either side of an in-service submarine cable — a separation standard the principles of which also apply to other offshore renewable energy projects."
     
 "Subsea Cables UK Guideline No. 6 (endorsed by NASCA), which establishes principles for determining safe proximity distances and negotiating proximity agreements between offshore wind farms and submarine cables and reflects extensive experience in the United Kingdom with managing spatial conflicts between offshore wind farms and submarine cables."
 
-- separation distances:
+"endorse a default separation distance of 500 meters in water depths of less than 75 meters and the greater of 500 meters or two times the depth of water in greater water depths."
+
+1. **Default separation distance** by depth:
+    - <= 250 m: 500 m
+    - > 250 m: 2 x depth
+
+Psudocode:
+
+```
+# buffer based on depth
+cables_buffers = list()
+for (x in unique(cable_cells$depth)){
+
+  cables_buffers[str(x)] = cable_cells %>%
+    subset(depth == x) %>%
+    buffer(x)
+
+}
+cable_buf = merge(cables_buffers) 
+
+# smooth out jagged edges between cells
+cable_buf = simplify(cable_buf)
+```
 
 ## Overlay with Existing Renewable Energy
 
