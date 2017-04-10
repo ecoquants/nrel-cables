@@ -37,7 +37,7 @@ And another reference [@lopez_review_2013].
 
 ## Importance of Marine Renewable Energy
 
--  Marine renewables are an important off
+-  Marine renewable energy is an important contribution to reducing our dependency on fossil fuels and carbon footprint contributing to climate change.
 
 - organizations:
     - ICPC: International Cable Protection Committee
@@ -113,6 +113,14 @@ leaflet(lns) %>%
     popup = ~sprintf("scaleBand: %s<br>description: %s<br>effectiveDate: %s", scaleBand, description, effectiveDate))
 ```
 
+### Depth: GEBCO
+
+The bathymetric depth comes from the [GEBCO 30 arc-second grid](http://www.gebco.net/data_and_products/gridded_bathymetry_data/gebco_30_second_grid/). Here's there requested attribution:
+
+**GEBCO_2014 Grid, version 20150318, www.gebco.net**
+
+![](http://images.vliz.be/resized/64940_general-bathymetric-chart-of-the-oceans-gebco.png)
+
 ### Renewable Energy
 
 NREL.
@@ -151,14 +159,11 @@ cable_buf = merge(cables_buffers)
 cable_buf = simplify(cable_buf)
 ```
 
-### Depth
+### Depth + Cables: Morro Bay example
 
-The bathymetric depth comes from the [GEBCO 30 arc-second grid](http://www.gebco.net/data_and_products/gridded_bathymetry_data/gebco_30_second_grid/). Here's there requested attribution:
+Initially, let's try the depth-varying buffer on a small experimental area of Morro Bay, CA where a floating offshore wind farm is currently proposed amongst [California Activities | BOEM](https://www.boem.gov/California/). We'll scale up to national later.
 
-**GEBCO_2014 Grid, version 20150318, www.gebco.net**
-
-![](http://images.vliz.be/resized/64940_general-bathymetric-chart-of-the-oceans-gebco.png)
-
+Here's the GEBCO depth for our initial Morro Bay study area:
 
 ```{r}
 library(raster)
@@ -177,7 +182,11 @@ depth_rc = crop(depth_r, extent(xmin, xmax, ymin, ymax)) # Morro Bay test
 depth_rc[depth_rc > 0] = NA
 depth_rc = depth_rc * -1
 plot(depth_rc)
+```
 
+Let's plot this in an interactive map interface:
+
+```{r}
 pal <- colorNumeric(
   c("blue","purple"),  # RColorBrewer::display.brewer.all()
   values(depth_rc), na.color = "transparent")
@@ -198,6 +207,10 @@ leaflet() %>%
     zoom = 10)
 ```
 
+### Depth-Varying Buffer: Morro Bay example
+
+Now we'll apply a depth-varying buffer to the offshore cables, 2 \* depth for "minimum" and 3 \* depth for "recommended" separation zones for routing new cables, by first intersecting depth with cables, then iterating over each depth to apply the appropriate buffers before finally dissolving all buffers. In order to apply the buffer, I needed to project from geographic coordinates to a projection that minimizes area distortion, so chose Albers Equal Area and applied the ["one-sixth rule"]( http://desktop.arcgis.com/en/arcmap/latest/map/projections/albers-equal-area-conic.htm#GUID-2158C4F9-F197-458E-94F0-84933C1BE6B7) based on the extent of the cable features to minimize distortion.
+
 ```{r}
 library(rgeos)
 library(geosphere)
@@ -211,7 +224,7 @@ if(any(!file.exists(rds_dx2), !file.exists(rds_dx2))){
   # convert raster to vector
   depth_p = rasterToPolygons(depth_rc, dissolve=T)
   names(depth_p@data) = 'depth'
-  plot(depth_p)
+  #plot(depth_p)
   
   lns_t = spTransform(lns, crs(depth_p))
   lns_i = raster::intersect(lns_t, depth_p) # 3 secs
@@ -220,12 +233,12 @@ if(any(!file.exists(rds_dx2), !file.exists(rds_dx2))){
     group_by(depth) %>%
     summarize(n = n())
   
-  depths_m %>%
-    arrange(desc(n))
+  # depths_m %>%
+  #   arrange(desc(n))
   
   # Albers Equal Area, with one-sixth rule
   bb = bbox(lns_i)
-  lat_range = extendrange(bb['y',],f=(1+2/6))
+  lat_range = extendrange(bb['y',],f=-1/6)
   crs_aea = CRS(
     sprintf(
       "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
@@ -235,7 +248,7 @@ if(any(!file.exists(rds_dx2), !file.exists(rds_dx2))){
   #for (d in depths_m$depth){ # m = 8
   for (i in 1:nrow(depths_m)){ # i = 2
     d = depths_m$depth[i]
-    cat(sprintf('%03d of %d: %d m\n', i, nrow(depths_m), d))
+    #cat(sprintf('%03d of %d: %d m\n', i, nrow(depths_m), d))
   
     lns_d = subset(lns_a, depth==d)
     buf_dx2 = gBuffer(lns_d, width=d*2)  
@@ -285,7 +298,7 @@ leaflet() %>%
       scaleBand, description, effectiveDate)) %>%
   addLayersControl(
     baseGroups = c("B&W", "Ocean"),
-    overlayGroups = c("cables", "buffer: 3*depth", "buffer: 2*depth", 'depth'),
+    overlayGroups = c('depth', 'buffer: 3*depth', 'buffer: 2*depth', 'cables'),
     options = layersControlOptions(collapsed = FALSE)) %>%
   setView(
     seq(xmin, xmax, length.out=3)[2], 
@@ -293,6 +306,7 @@ leaflet() %>%
     zoom = 10)
 ```
 
+**Next steps**. The above R code works well for this small area, but will not scale well to the national level. I'll implement the intersection, buffering and dissolve operations in a [PostGIS](http://postgis.net/) spatial database, which has the advantage of much more efficient spatial indexing and operations.
 
 ## Avoidance Zones for Siting New Facilities
 
