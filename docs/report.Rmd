@@ -17,7 +17,6 @@ bibliography: nrel-cables.bib
 
 ```{r setup, include=FALSE}
 library(knitr)
-library(tidyverse)
 
 opts_chunk$set(warning=F, message=F)
 
@@ -26,11 +25,15 @@ if (opts_knit$get("rmarkdown.pandoc.to") == 'html'){
 } else {
   opts_chunk$set(echo=F)
 }
+
+if (basename(getwd()) == 'nrel-cables') setwd('docs')
 ```
 
 # Introduction
 
 Previous preliminary work [@amante_offshore_2016] and a couple industry reports [@communicationssecurityreliabilityandinteroperabilitycounciliv_clustering_2016; @communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014] inform this report.
+
+And another reference [@lopez_review_2013].
 
 ## Importance of Marine Renewable Energy
 
@@ -73,6 +76,8 @@ US EEZ for Pacific and Atlantic. Alaska & Hawaii?
 See Table \@ref(tab:data-sources).
 
 ```{r data-sources, tidy=F}
+library(tidyverse)
+
 read_csv('../data/data_sources.csv') %>%
   kable(
     caption = 'Data sources from preliminary report.', booktabs=T)
@@ -146,6 +151,114 @@ cable_buf = merge(cables_buffers)
 cable_buf = simplify(cable_buf)
 ```
 
+### Depth
+
+The bathymetric depth comes from the [GEBCO 30 arc-second grid](http://www.gebco.net/data_and_products/gridded_bathymetry_data/gebco_30_second_grid/). Here's there requested attribution:
+
+**GEBCO_2014 Grid, version 20150318, www.gebco.net**
+
+![](http://images.vliz.be/resized/64940_general-bathymetric-chart-of-the-oceans-gebco.png)
+
+
+```{r}
+library(raster)
+#library(marmap)
+
+# files
+depth_nc    = '../data/big/GEBCO_2014_2D.nc' # 1.87 GB -- too big for Github
+
+# load depth
+depth_r = raster(depth_nc, layer = 'elevation')
+
+# extract to extent of submarine cable lines
+#depth_rc = crop(depth_r, extent(lns))
+xmin = -121.29; xmax = -120.59; ymin = 35.04; ymax = 35.55
+depth_rc = crop(depth_r, extent(xmin, xmax, ymin, ymax)) # Morro Bay test
+depth_rc[depth_rc > 0] = NA
+depth_rc = depth_rc * -1
+plot(depth_rc)
+
+pal <- colorNumeric(
+  c("blue","purple"),  # RColorBrewer::display.brewer.all()
+  values(depth_rc), na.color = "transparent")
+
+leaflet() %>% 
+  addProviderTiles("Stamen.TonerLite") %>%
+  addRasterImage(depth_rc, colors = pal, opacity = 0.8) %>%
+  addLegend(pal = pal, values = values(depth_rc),
+    title = "Depth") %>%
+  addPolylines(
+    data = lns, color='orange',
+    popup = ~sprintf(
+      "scaleBand: %s<br>description: %s<br>effectiveDate: %s", 
+      scaleBand, description, effectiveDate)) %>%
+  setView(
+    seq(xmin, xmax, length.out=3)[2], 
+    seq(ymin, ymax, length.out=3)[2], 
+    zoom = 10)
+```
+
+```{r}
+library(rgeos)
+library(geosphere)
+library(sf)
+
+# convert raster to vector
+depth_p = rasterToPolygons(depth_rc, dissolve=T)
+names(depth_p@data) = 'depth'
+plot(depth_p)
+
+lns_t = spTransform(lns, crs(depth_p))
+lns_i = raster::intersect(lns_t, depth_p) # 3 secs
+
+depths_m = lns_i@data %>%
+  group_by(depth) %>%
+  summarize(n = n())
+
+depths_m %>%
+  arrange(desc(n))
+
+# Albers Equal Area, with one-sixth rule
+bb = bbox(lns_i)
+lat_range = extendrange(bb['y',],f=(1+2/6))
+crs_aea = CRS(
+  sprintf(
+    "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
+    lat_range[1], lat_range[2], mean(lat_range), mean(bb['x',])))
+
+#for (d in depths_m$depth){ # m = 8
+for (i in 1:nrow(depths_m)){ # i = 2
+  d = depths_m$depth[i]
+  cat(sprintf('%03d of %d: %d m\n', i, nrow(depths_m), d))
+  
+  lns_d = lns_i %>%
+    subset(depth==d) %>% 
+    spTransform(crs_aea)
+
+  buf_dx2 = gBuffer(lns_d, width=d*2)  
+  buf_dx3 = gBuffer(lns_d, width=d*3)  
+  
+  if (i == 1){
+    ply_dx2 = buf_dx2
+    ply_dx3 = buf_dx3
+  } else {
+    ply_dx2 = raster::union(ply_dx2, buf_dx2)
+    ply_dx3 = raster::union(ply_dx3, buf_dx3)
+  }
+}
+
+
+??gUnaryUnion
+
+plot(lns_a)
+plot(db, add=T)
+plot(d2, add=T)
+depth_p@data
+d2
+plot(lns_d)
+```
+
+
 ## Avoidance Zones for Siting New Facilities
 
 "ICPC Recommendation 13 No. 2, which establishes a methodology for determining site-specific proximity limits between submarine cables and offshore wind facilities and a default separation distance in shallower waters of 500 meters on either side of an in-service submarine cable — a separation standard the principles of which also apply to other offshore renewable energy projects."
@@ -155,8 +268,8 @@ cable_buf = simplify(cable_buf)
 "endorse a default separation distance of 500 meters in water depths of less than 75 meters and the greater of 500 meters or two times the depth of water in greater water depths."
 
 1. **Default separation distance** by depth:
-    - <= 250 m: 500 m
-    - > 250 m: 2 x depth
+    - `<= 250 m`: 500 m
+    - `> 250 m`: 2 x depth
 
 Psudocode:
 
