@@ -203,59 +203,94 @@ library(rgeos)
 library(geosphere)
 library(sf)
 
-# convert raster to vector
-depth_p = rasterToPolygons(depth_rc, dissolve=T)
-names(depth_p@data) = 'depth'
-plot(depth_p)
+rds_dx2 = '../data/morro-bay_2xdepth.rds'
+rds_dx3 = '../data/morro-bay_3xdepth.rds'
 
-lns_t = spTransform(lns, crs(depth_p))
-lns_i = raster::intersect(lns_t, depth_p) # 3 secs
+if(any(!file.exists(rds_dx2), !file.exists(rds_dx2))){
 
-depths_m = lns_i@data %>%
-  group_by(depth) %>%
-  summarize(n = n())
-
-depths_m %>%
-  arrange(desc(n))
-
-# Albers Equal Area, with one-sixth rule
-bb = bbox(lns_i)
-lat_range = extendrange(bb['y',],f=(1+2/6))
-crs_aea = CRS(
-  sprintf(
-    "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
-    lat_range[1], lat_range[2], mean(lat_range), mean(bb['x',])))
-
-#for (d in depths_m$depth){ # m = 8
-for (i in 1:nrow(depths_m)){ # i = 2
-  d = depths_m$depth[i]
-  cat(sprintf('%03d of %d: %d m\n', i, nrow(depths_m), d))
+  # convert raster to vector
+  depth_p = rasterToPolygons(depth_rc, dissolve=T)
+  names(depth_p@data) = 'depth'
+  plot(depth_p)
   
-  lns_d = lns_i %>%
-    subset(depth==d) %>% 
-    spTransform(crs_aea)
-
-  buf_dx2 = gBuffer(lns_d, width=d*2)  
-  buf_dx3 = gBuffer(lns_d, width=d*3)  
+  lns_t = spTransform(lns, crs(depth_p))
+  lns_i = raster::intersect(lns_t, depth_p) # 3 secs
   
-  if (i == 1){
-    ply_dx2 = buf_dx2
-    ply_dx3 = buf_dx3
-  } else {
-    ply_dx2 = raster::union(ply_dx2, buf_dx2)
-    ply_dx3 = raster::union(ply_dx3, buf_dx3)
+  depths_m = lns_i@data %>%
+    group_by(depth) %>%
+    summarize(n = n())
+  
+  depths_m %>%
+    arrange(desc(n))
+  
+  # Albers Equal Area, with one-sixth rule
+  bb = bbox(lns_i)
+  lat_range = extendrange(bb['y',],f=(1+2/6))
+  crs_aea = CRS(
+    sprintf(
+      "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
+      lat_range[1], lat_range[2], mean(lat_range), mean(bb['x',])))
+  lns_a = spTransform(lns_i, crs_aea)
+  
+  #for (d in depths_m$depth){ # m = 8
+  for (i in 1:nrow(depths_m)){ # i = 2
+    d = depths_m$depth[i]
+    cat(sprintf('%03d of %d: %d m\n', i, nrow(depths_m), d))
+  
+    lns_d = subset(lns_a, depth==d)
+    buf_dx2 = gBuffer(lns_d, width=d*2)  
+    buf_dx3 = gBuffer(lns_d, width=d*3)  
+    
+    if (i == 1){
+      ply_dx2 = buf_dx2
+      ply_dx3 = buf_dx3
+    } else {
+      ply_dx2 = raster::union(ply_dx2, buf_dx2)
+      ply_dx3 = raster::union(ply_dx3, buf_dx3)
+    }
   }
+  ply_dx2 = gUnaryUnion(ply_dx2)
+  ply_dx3 = gUnaryUnion(ply_dx3)
+  
+  ply_dx2 = spTransform(ply_dx2, crs(depth_p))
+  ply_dx3 = spTransform(ply_dx3, crs(depth_p))
+  
+  saveRDS(ply_dx2, rds_dx2)
+  saveRDS(ply_dx3, rds_dx3)
 }
 
+ply_dx2 = readRDS(rds_dx2)
+ply_dx3 = readRDS(rds_dx3)
 
-??gUnaryUnion
-
-plot(lns_a)
-plot(db, add=T)
-plot(d2, add=T)
-depth_p@data
-d2
-plot(lns_d)
+leaflet() %>% 
+  addProviderTiles("Stamen.TonerLite", group = "B&W") %>%
+  addProviderTiles('Esri.OceanBasemap', group = "Ocean") %>%  #
+  addRasterImage(
+    depth_rc, group='depth',
+    colors = pal, opacity = 0.8) %>%
+  addLegend(
+    pal = pal, values = values(depth_rc),
+    title = "Depth", position='bottomright') %>%
+  addPolygons(
+    data = ply_dx3, group='buffer: 3*depth',
+    color='red', stroke=F, fillOpacity = 0.5) %>%
+  addPolygons(
+    data = ply_dx2, group='buffer: 2*depth', 
+    color='red', stroke=F, fillOpacity = 0.5) %>%
+  addPolylines(
+    data = lns, group='cables', 
+    color='black', opacity = 1, weight=1,
+    popup = ~sprintf(
+      "scaleBand: %s<br>description: %s<br>effectiveDate: %s",
+      scaleBand, description, effectiveDate)) %>%
+  addLayersControl(
+    baseGroups = c("B&W", "Ocean"),
+    overlayGroups = c("cables", "buffer: 3*depth", "buffer: 2*depth", 'depth'),
+    options = layersControlOptions(collapsed = FALSE)) %>%
+  setView(
+    seq(xmin, xmax, length.out=3)[2], 
+    seq(ymin, ymax, length.out=3)[2], 
+    zoom = 10)
 ```
 
 
