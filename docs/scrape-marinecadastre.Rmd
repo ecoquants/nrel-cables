@@ -27,7 +27,7 @@ library(DT)
 url_mc  = 'https://marinecadastre.gov/data/'
 dir_mc  = '/Volumes/Best HD/nrel_data_big/marinecadastre.gov'
 csv_mc  = file.path(dir_mc, '_datasets.csv')
-csv_mc2 = file.path('data', 'marinecastre.gov_datasets.csv')
+csv_mc2 = file.path('../data', 'marinecastre.gov_datasets.csv')
 
 dir.create(dir_mc, showWarnings = F)
 
