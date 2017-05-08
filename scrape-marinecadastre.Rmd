@@ -1,0 +1,142 @@
+---
+title: "Scrape MarineCadastre.gov for Datasets"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
+```
+
+## Scrape for Datasets
+
+Use `rvest`, see `vignette("selectorgadget")`.
+
+- [rvest: easy web scraping with R | RStudio Blog](https://blog.rstudio.org/2014/11/24/rvest-easy-web-scraping-with-r/)
+
+```{r scrape}
+library(tidyverse)
+library(rvest)
+library(webshot)
+library(stringr)
+library(DT)
+
+url_mc  = 'https://marinecadastre.gov/data/'
+dir_mc  = '/Volumes/Best HD/nrel_data_big/marinecadastre.gov'
+csv_mc  = file.path(dir_mc, '_datasets.csv')
+csv_mc2 = file.path('data', 'marinecastre.gov_datasets.csv')
+
+dir.create(dir_mc, showWarnings = F)
+
+get_page = function(url, js='scrape.js', html='scraped.html'){
+  # write javascript for feeding to phantomjs for obtaining rendered html
+  write(paste0(
+  "var url ='", url, "';
+  var page = new WebPage(); var fs = require('fs');
+  // open page, wait 5000 miliseconds, write html
+  page.open(url, function (status) {
+    just_wait();
+  });
+  function just_wait() {
+    setTimeout(function() {
+      fs.write('", html, "', page.content, 'w');
+      phantom.exit();
+    }, 5000);
+  }
+  "), js)
+  webshot:::phantom_run(js)
+  return(html)
+}
+
+if (!file.exists(csv_mc)){
+  h = get_page(url_mc) %>%
+    read_html()
+  unlink(c('scrape.js','scraped.html'))
+  nodes = h %>% html_nodes('div.mc-panel-layer')
+  
+  d = tibble(
+    node = h %>% html_nodes('div.mc-panel-layer'),
+    title        = node %>% html_nodes('h4') %>% html_text(trim=T),
+    description  = node %>% html_nodes('div.panel-body') %>% html_text(trim=T),
+    provider     = node %>% html_nodes('p') %>% html_text(trim=T),
+    provider_url = node %>% html_nodes('p a') %>% html_attr('href'),
+    downloads    = map(node, function(x) html_nodes(
+      x, 'a[analytics-event="Download"]') %>% 
+        html_attr('href')),
+    metadatas    = map(node, function(x) html_nodes(
+      x, 'li[ng-repeat="metadata in layer.Metadata[0].MetadataInfo"] > a') %>% 
+        html_attr('href')),
+    downloads_piped = map_chr(downloads, function(x) paste(x, collapse='|')),
+    downloads_n     = map_int(downloads, length),
+    metadatas_piped = map_chr(metadatas, function(x) paste(x, collapse='|')),
+    metadatas_n     = map_int(metadatas, length))
+    
+  write_csv(d %>% select(-node, -downloads, -metadatas), mc_csv)
+  file.copy(csv_mc, csv_mc2)
+}
+
+# show parsed dataset info ----
+read_csv(csv_mc) %>%
+  select(-description) %>%
+  datatable()
+```
+
+
+## Download Datasets
+
+```{r download}
+mc = read_csv(csv_mc) %>%
+  mutate(
+    downloads = str_split(downloads_piped, fixed('|')),
+    metadatas = str_split(metadatas_piped, fixed('|')))
+
+for (i in 1:nrow(mc)){ # i=3
+  dir_i = file.path(dir_mc, str_replace_all(mc$title[i], '[:/]','-'))
+  dir.create(dir_i, showWarnings = F, recursive = T)
+  #cat(sprintf('i=%03d: %s\n', i, basename(dir_i)))
+  
+  if (dir.exists(dir_i)){
+    #cat(sprintf('  Output directory exists, so skipping\n'))
+    next
+  }
+  
+  for (j in 1:length(mc$downloads[[i]])){ # j=2
+    down  = mc$downloads[[i]][j]
+    dest  = file.path(dir_i, basename(down))
+    dir_j = file.path(dir_i, sprintf('%s_dir', tools::file_path_sans_ext(basename(down))))
+    err_j = file.path(dir_i, sprintf('%s_error.txt', tools::file_path_sans_ext(basename(down))))
+
+    cat(sprintf('  j=%d: %s\n', j, basename(down)))
+    r = try({
+      download.file(down, dest)
+      dir.create(dir_j, showWarnings = F)
+      unzip(dest, exdir=dir_j)
+    })
+    
+    if ('try-error' %in% class(r)){
+      write_file(as.character(r), err_j)
+    }
+  }
+}
+
+# show size of files ----
+d = read_csv(csv_mc) %>%
+  mutate(
+    dir_path = file.path(dir_mc, str_replace_all(mc$title, '[:/]','-')),
+    dir_base = basename(dir_path),
+    dir_size_mb = map_dbl(dir_path, function(p){
+      list.files(p, all.files=T, full.names=T, recursive=T) %>%
+        file.info() %>% .$size %>% sum(na.rm=T) / (1000*1000)
+      }),
+    dir_size_mb  = round(dir_size_mb, digits=2))
+
+d %>%
+  select(title, dir_base, dir_size_mb) %>%
+  mutate(
+    dir_size_mb = scales::comma(dir_size_mb)) %>%
+  datatable()
+```
+
