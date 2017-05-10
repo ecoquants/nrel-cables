@@ -13,7 +13,8 @@ knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
 
 ## Scrape for Datasets
 
-Use `rvest`, see `vignette("selectorgadget")`.
+
+Scrape datasets with links for downloads and metadata from [marinecadastre.gov/data](https://marinecadastre.gov/data/) using the R package `rvest` (see `vignette("selectorgadget")`).
 
 - [rvest: easy web scraping with R | RStudio Blog](https://blog.rstudio.org/2014/11/24/rvest-easy-web-scraping-with-r/)
 
@@ -81,7 +82,7 @@ if (!file.exists(csv_mc)){
 # show parsed dataset info ----
 read_csv(csv_mc) %>%
   select(-description) %>%
-  datatable()
+  datatable(options = list(pageLength = 50))
 ```
 
 
@@ -137,6 +138,6 @@ d %>%
   select(title, dir_base, dir_size_mb) %>%
   mutate(
     dir_size_mb = scales::comma(dir_size_mb)) %>%
-  datatable()
+  datatable(options = list(pageLength = 50))
 ```
 
