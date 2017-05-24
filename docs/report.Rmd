@@ -20,7 +20,7 @@ library(knitr)
 
 opts_chunk$set(warning=F, message=F)
 
-if (opts_knit$get("rmarkdown.pandoc.to") == 'html'){
+if ("rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_knit$get("rmarkdown.pandoc.to") == 'html'){
   opts_chunk$set(echo=T)
 } else {
   opts_chunk$set(echo=F)
@@ -165,7 +165,7 @@ Initially, let's try the depth-varying buffer on a small experimental area of Mo
 
 Here's the GEBCO depth for our initial Morro Bay study area:
 
-```{r}
+```{r depth}
 library(raster)
 #library(marmap)
 
@@ -186,7 +186,7 @@ plot(depth_rc)
 
 Let's plot this in an interactive map interface:
 
-```{r}
+```{r leaflet cables}
 pal <- colorNumeric(
   c("blue","purple"),  # RColorBrewer::display.brewer.all()
   values(depth_rc), na.color = "transparent")
@@ -211,7 +211,7 @@ leaflet() %>%
 
 Now we'll apply a depth-varying buffer to the offshore cables, 2 \* depth for "minimum" and 3 \* depth for "recommended" separation zones for routing new cables, by first intersecting depth with cables, then iterating over each depth to apply the appropriate buffers before finally dissolving all buffers. In order to apply the buffer, I needed to project from geographic coordinates to a projection that minimizes area distortion, so chose Albers Equal Area and applied the ["one-sixth rule"]( http://desktop.arcgis.com/en/arcmap/latest/map/projections/albers-equal-area-conic.htm#GUID-2158C4F9-F197-458E-94F0-84933C1BE6B7) based on the extent of the cable features to minimize distortion.
 
-```{r}
+```{r leaflet cables + buffer}
 library(rgeos)
 library(geosphere)
 library(sf)
@@ -337,6 +337,154 @@ cable_buf = merge(cables_buffers)
 # smooth out jagged edges between cells
 cable_buf = simplify(cable_buf)
 ```
+
+## Depth-Varying Buffer: CA Example
+
+```{r leaflet cables + buffer at depth classes}
+library(rgeos)
+library(geosphere)
+library(sf)
+library(tidyverse)
+
+bb = extent(lns)
+
+regions = list(
+  all        = c(xmin = bb@xmin, ymin = bb@ymin, xmax = bb@xmax, ymax = bb@ymax),
+  `ca-coast` = c(xmin = -126, xmax = -116, ymin = 32, ymax = 42),
+  pacific    = c(xmin = -126, xmax = -116, ymin = 32, ymax = 42))
+region = 'all'
+
+dcx2_rds = sprintf('../data/%s_2xdepth-classes.rds', region)
+dcx3_rds = sprintf('../data/%s_3xdepth-classes.rds', region)
+tbl_reclass_csv = sprintf('../data/%s_depth-reclass.csv', region)
+
+
+# clip depth to US W Coast (eg bottom right: https://www.google.com/maps/place/32N+116W)
+# # US west coast
+v = regions[[region]]
+depth_rc = crop(depth_r, extent(v['xmin'], v['xmax'], v['ymin'], v['ymax']))
+depth_rc[depth_rc > 0] = NA
+depth_rc = depth_rc * -1
+plot(depth_rc)
+
+if(any(!file.exists(dcx2_rds), !file.exists(dcx3_rds))){
+  
+  # create reclass table
+  d_incr = 100
+  data_frame(
+    depth_from=0, depth_to=250,	depth_1x=250) %>%
+    bind_rows(
+      data_frame(
+        depth_1x = seq(250 + d_incr/2, cellStats(depth_rc, 'max'), by=d_incr)) %>%
+        mutate(
+          depth_from = depth_1x - d_incr/2,
+          depth_to   = depth_1x + d_incr/2)) %>%
+    mutate(
+      depth_2x   = depth_1x*2,
+      depth_3x   = depth_1x*3) %>% 
+    write_csv(tbl_reclass_csv)
+  
+  # reclassify raster
+  tbl_reclass = read_csv(tbl_reclass_csv)
+  tbl_reclass %>% DT::datatable() # n=51
+  
+  r_d1x = reclassify(depth_rc, tbl_reclass %>% select(depth_from, depth_to, depth_1x)) # plot(r_d1x)
+  system.time({
+    p_d1x = rasterToPolygons(r_d1x, dissolve=T) # ca-coast: 5 min
+  })
+  
+  # convert raster to vector
+  #depth_p = rasterToPolygons(depth_rc, dissolve=T)
+  #names(depth_p@data) = 'depth'
+  names(p_d1x@data) = 'buf1x'
+  #plot(depth_p)
+  
+  lns_t = spTransform(lns, crs(p_d1x))
+  system.time({
+    lns_i = raster::intersect(lns_t, p_d1x) # morro-bay: 3 secs; ca-coast: 6.2 min
+  })
+    
+  bufs = lns_i@data %>%
+    group_by(buf1x) %>%
+    summarize(n = n())
+  
+  # bufs_m %>%
+  #   arrange(desc(n))
+  
+  # Albers Equal Area, with one-sixth rule
+  bb = bbox(lns_i)
+  lat_range = extendrange(bb['y',],f=-1/6)
+  crs_aea = CRS(
+    sprintf(
+      "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
+      lat_range[1], lat_range[2], mean(lat_range), mean(bb['x',])))
+  lns_a = spTransform(lns_i, crs_aea) # plot(lns_a)
+  
+  #for (d in bufs$depth){ # m = 8
+  for (i in 1:nrow(bufs)){ # i = 1
+    b = bufs$buf1x[i]
+    cat(sprintf('%03d of %d: %d m\n', i, nrow(bufs), b))
+  
+    lns_b = subset(lns_a, buf1x==b)
+    buf_dx2 = gBuffer(lns_b, width=b*2)  
+    buf_dx3 = gBuffer(lns_b, width=b*3)  
+    
+    if (i == 1){
+      ply_dx2 = buf_dx2
+      ply_dx3 = buf_dx3
+    } else {
+      ply_dx2 = raster::union(ply_dx2, buf_dx2)
+      ply_dx3 = raster::union(ply_dx3, buf_dx3)
+    }
+  }
+  ply_dx2 = gUnaryUnion(ply_dx2)
+  ply_dx3 = gUnaryUnion(ply_dx3)
+  
+  ply_dx2 = spTransform(ply_dx2, crs(p_d1x))
+  ply_dx3 = spTransform(ply_dx3, crs(p_d1x))
+  
+  saveRDS(ply_dx2, dcx2_rds)
+  saveRDS(ply_dx3, dcx3_rds)
+}
+
+ply_dx2 = readRDS(dcx2_rds)
+ply_dx3 = readRDS(dcx3_rds)
+
+pal <- colorNumeric(
+  c("blue","purple"),  # RColorBrewer::display.brewer.all()
+  values(depth_rc), na.color = "transparent")
+
+m = leaflet() %>% 
+  addProviderTiles("Stamen.TonerLite", group = "B&W") %>%
+  addProviderTiles('Esri.OceanBasemap', group = "Ocean") %>%  #
+  addRasterImage(
+    depth_rc, group='depth',
+    colors = pal, opacity = 0.8) %>%
+  addLegend(
+    pal = pal, values = values(depth_rc),
+    title = "Depth", position='bottomright') %>%
+  addPolygons(
+    data = ply_dx3, group='buffer: 3*depth',
+    color='red', stroke=F, fillOpacity = 0.5) %>%
+  addPolygons(
+    data = ply_dx2, group='buffer: 2*depth', 
+    color='red', stroke=F, fillOpacity = 0.5) %>%
+  addPolylines(
+    data = lns, group='cables', 
+    color='black', opacity = 1, weight=1,
+    popup = ~sprintf(
+      "scaleBand: %s<br>description: %s<br>effectiveDate: %s",
+      scaleBand, description, effectiveDate)) %>%
+  addLayersControl(
+    baseGroups = c("B&W", "Ocean"),
+    overlayGroups = c('depth', 'buffer: 3*depth', 'buffer: 2*depth', 'cables'),
+    options = layersControlOptions(collapsed = FALSE))
+  
+bb = extent(depth_rc)
+m %>%
+  fitBounds(bb@xmin, bb@ymin, bb@xmax, bb@ymax)
+```
+
 
 ## Overlay with Existing Renewable Energy
 
