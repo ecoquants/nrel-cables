@@ -167,6 +167,7 @@ Here's the GEBCO depth for our initial Morro Bay study area:
 
 ```{r depth}
 library(raster)
+select = dplyr::select
 #library(marmap)
 
 # files
@@ -181,7 +182,7 @@ xmin = -121.29; xmax = -120.59; ymin = 35.04; ymax = 35.55
 depth_rc = crop(depth_r, extent(xmin, xmax, ymin, ymax)) # Morro Bay test
 depth_rc[depth_rc > 0] = NA
 depth_rc = depth_rc * -1
-plot(depth_rc)
+#plot(depth_rc)
 ```
 
 Let's plot this in an interactive map interface:
@@ -340,11 +341,10 @@ cable_buf = simplify(cable_buf)
 
 ## Depth-Varying Buffer: CA Example
 
-```{r leaflet cables + buffer at depth classes}
-library(rgeos)
-library(geosphere)
-library(sf)
-library(tidyverse)
+
+```{r map ca}
+dx2_rds = sprintf('../data/ca-coast_2xdepth-classes.rds')
+dx3_rds = sprintf('../data/ca-coast_3xdepth-classes.rds')
 
 bb = extent(lns)
 
@@ -352,10 +352,10 @@ regions = list(
   all        = c(xmin = bb@xmin, ymin = bb@ymin, xmax = bb@xmax, ymax = bb@ymax),
   `ca-coast` = c(xmin = -126, xmax = -116, ymin = 32, ymax = 42),
   pacific    = c(xmin = -126, xmax = -116, ymin = 32, ymax = 42))
-region = 'all'
+region = 'ca-coast'
 
-dcx2_rds = sprintf('../data/%s_2xdepth-classes.rds', region)
-dcx3_rds = sprintf('../data/%s_3xdepth-classes.rds', region)
+dx2_rds = sprintf('../data/%s_2xdepth-classes.rds', region)
+dx3_rds = sprintf('../data/%s_3xdepth-classes.rds', region)
 tbl_reclass_csv = sprintf('../data/%s_depth-reclass.csv', region)
 
 
@@ -365,90 +365,10 @@ v = regions[[region]]
 depth_rc = crop(depth_r, extent(v['xmin'], v['xmax'], v['ymin'], v['ymax']))
 depth_rc[depth_rc > 0] = NA
 depth_rc = depth_rc * -1
-plot(depth_rc)
+#plot(depth_rc)
 
-if(any(!file.exists(dcx2_rds), !file.exists(dcx3_rds))){
-  
-  # create reclass table
-  d_incr = 100
-  data_frame(
-    depth_from=0, depth_to=250,	depth_1x=250) %>%
-    bind_rows(
-      data_frame(
-        depth_1x = seq(250 + d_incr/2, cellStats(depth_rc, 'max'), by=d_incr)) %>%
-        mutate(
-          depth_from = depth_1x - d_incr/2,
-          depth_to   = depth_1x + d_incr/2)) %>%
-    mutate(
-      depth_2x   = depth_1x*2,
-      depth_3x   = depth_1x*3) %>% 
-    write_csv(tbl_reclass_csv)
-  
-  # reclassify raster
-  tbl_reclass = read_csv(tbl_reclass_csv)
-  tbl_reclass %>% DT::datatable() # n=51
-  
-  r_d1x = reclassify(depth_rc, tbl_reclass %>% select(depth_from, depth_to, depth_1x)) # plot(r_d1x)
-  system.time({
-    p_d1x = rasterToPolygons(r_d1x, dissolve=T) # ca-coast: 5 min
-  })
-  
-  # convert raster to vector
-  #depth_p = rasterToPolygons(depth_rc, dissolve=T)
-  #names(depth_p@data) = 'depth'
-  names(p_d1x@data) = 'buf1x'
-  #plot(depth_p)
-  
-  lns_t = spTransform(lns, crs(p_d1x))
-  system.time({
-    lns_i = raster::intersect(lns_t, p_d1x) # morro-bay: 3 secs; ca-coast: 6.2 min
-  })
-    
-  bufs = lns_i@data %>%
-    group_by(buf1x) %>%
-    summarize(n = n())
-  
-  # bufs_m %>%
-  #   arrange(desc(n))
-  
-  # Albers Equal Area, with one-sixth rule
-  bb = bbox(lns_i)
-  lat_range = extendrange(bb['y',],f=-1/6)
-  crs_aea = CRS(
-    sprintf(
-      "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
-      lat_range[1], lat_range[2], mean(lat_range), mean(bb['x',])))
-  lns_a = spTransform(lns_i, crs_aea) # plot(lns_a)
-  
-  #for (d in bufs$depth){ # m = 8
-  for (i in 1:nrow(bufs)){ # i = 1
-    b = bufs$buf1x[i]
-    cat(sprintf('%03d of %d: %d m\n', i, nrow(bufs), b))
-  
-    lns_b = subset(lns_a, buf1x==b)
-    buf_dx2 = gBuffer(lns_b, width=b*2)  
-    buf_dx3 = gBuffer(lns_b, width=b*3)  
-    
-    if (i == 1){
-      ply_dx2 = buf_dx2
-      ply_dx3 = buf_dx3
-    } else {
-      ply_dx2 = raster::union(ply_dx2, buf_dx2)
-      ply_dx3 = raster::union(ply_dx3, buf_dx3)
-    }
-  }
-  ply_dx2 = gUnaryUnion(ply_dx2)
-  ply_dx3 = gUnaryUnion(ply_dx3)
-  
-  ply_dx2 = spTransform(ply_dx2, crs(p_d1x))
-  ply_dx3 = spTransform(ply_dx3, crs(p_d1x))
-  
-  saveRDS(ply_dx2, dcx2_rds)
-  saveRDS(ply_dx3, dcx3_rds)
-}
-
-ply_dx2 = readRDS(dcx2_rds)
-ply_dx3 = readRDS(dcx3_rds)
+ply_dx2 = readRDS(dx2_rds)
+ply_dx3 = readRDS(dx3_rds)
 
 pal <- colorNumeric(
   c("blue","purple"),  # RColorBrewer::display.brewer.all()
@@ -485,18 +405,204 @@ m %>%
   fitBounds(bb@xmin, bb@ymin, bb@xmax, bb@ymax)
 ```
 
+## Buffering over Tiles
 
-## Overlay with Existing Renewable Energy
+In order to apply the depth-varying buffer over the entirety of the cable layer without hitting memory issues, I divided the area into 32 tiles. The first tile took about 80 minutes [* 32 tiles / 60 min per hr = 42.67 hrs for all].
 
-Extract absolute and percent area overlap between zones and renewable energy potential areas, possibly at various depth bins.
+```{r tiled buffering at depth classes, eval=F}
+library(rgeos)
+library(geosphere)
+library(sf)
+library(tidyverse)
+
+d_incr = 100 # depth increment
+dx2_rds = sprintf('../data/buf_2xdepth-incr%sm.rds', d_incr)
+dx3_rds = sprintf('../data/buf_3xdepth-incr%sm.rds', d_incr)
+
+
+if(any(!file.exists(dc2_rds), !file.exists(dc3_rds))){
+
+  # setup tiles for iteration
+  bb = extent(lns)
+  rx = c(floor(bb@xmin), ceiling(bb@xmax))
+  ry = c(floor(bb@ymin), ceiling(bb@ymax))
+  dx = diff(rx)
+  dy = diff(ry)
+  nx = 8
+  ny = 4
+  tx = dx/nx
+  ty = dy/ny
+  xseq = seq(rx[1], by=tx, length.out=nx)
+  yseq = seq(ry[1], by=ty, length.out=ny)
+  xyseq = data_frame(xmin=numeric(0), xmax=numeric(0), ymin=numeric(0), ymax=numeric(0))
+  for (x in xseq){
+    for (y in yseq){
+      xyseq = bind_rows(
+        xyseq,
+        data_frame(
+          xmin=x, xmax=x+tx, ymin=y, ymax=y+ty)
+        )
+    }
+  }
+  
+  # iterate over tiles
+  for (i in 1:nrow(xyseq)){ # i = 1
+    
+    # setup extent
+    e_i = with(xyseq[i,], extent(xmin, xmax, ymin, ymax))
+    cat(sprintf('%02d: %0.1f,%0.1f -- %s\n', i, e_i@xmin, e_i@ymin, Sys.time()))
+    
+    # crop lines
+    lns_i = crop(lns, e_i)
+    
+    # skip tile if not lines
+    if (length(lns_i)) next
+    
+    # clip depth to tile
+    depth_i = crop(depth_r, e_i)
+    depth_i[depth_i > 0] = NA
+    depth_i = depth_i * -1
+    
+    # create depth reclass table
+    tbl_reclass = data_frame(
+      depth_from=0, depth_to=250,	depth_1x=250) %>%
+      bind_rows(
+        data_frame(
+          depth_1x = seq(250 + d_incr/2, cellStats(depth_i, 'max'), by=d_incr)) %>%
+          mutate(
+            depth_from = depth_1x - d_incr/2,
+            depth_to   = depth_1x + d_incr/2)) %>%
+      mutate(
+        depth_2x   = depth_1x*2,
+        depth_3x   = depth_1x*3)
+    #tbl_reclass %>% DT::datatable() # n=51
+  
+    # reclassify raster
+    cat(sprintf('  reclassify raster & convert to vector -- %s\n', Sys.time()))
+    r_d1x = reclassify(depth_i, tbl_reclass %>% select(depth_from, depth_to, depth_1x)) # plot(r_d1x)
+    # convert raster to vector
+    system.time({
+      p_d1x = rasterToPolygons(r_d1x, dissolve=T) # tiles:nx = 8;ny = 4 -> 79.2 min [ * 32 rows / 60 min per hr = 42.2 hrs ]
+    }) 
+    names(p_d1x@data) = 'buf1x'
+    
+    # project & intersect lns to depth vector
+    lns_t = spTransform(lns, crs(p_d1x))
+    system.time({
+      lns_i = raster::intersect(lns_t, p_d1x) # tiles:nx = 8;ny = 4 -> 1.7 min [ * 32 rows / 60 min per hr = 53.3 min ]
+    })
+    
+    # project to Albers Equal Area (with one-sixth rule) for units of meters
+    bb = bbox(lns_i)
+    lat_range = extendrange(bb['y',],f=-1/6)
+    crs_aea = CRS(
+      sprintf(
+        "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
+        lat_range[1], lat_range[2], mean(lat_range), mean(bb['x',])))
+    lns_a = spTransform(lns_i, crs_aea) # plot(lns_a)
+
+    # iterate over buffer depths
+    bufs = lns_i@data %>%
+      group_by(buf1x) %>%
+      summarize(n = n())
+    for (j in 1:nrow(bufs)){ # j = 1
+      b = bufs$buf1x[j]
+      cat(sprintf('  %03d of %d bufs: %d m -- %s\n', j, nrow(bufs), b, Sys.time()))
+      
+      lns_b = subset(lns_a, buf1x==b)
+      buf_dx2 = gBuffer(lns_b, width=b*2)  
+      buf_dx3 = gBuffer(lns_b, width=b*3)  
+      
+      if (j == 1){
+        ply_dx2_i = buf_dx2
+        ply_dx3_i = buf_dx3
+      } else {
+        ply_dx2_i = raster::union(ply_dx2_i, buf_dx2)
+        ply_dx3_i = raster::union(ply_dx3_i, buf_dx3)
+      }
+    } # 3 min
+    
+    ply_dx2_i = gUnaryUnion(ply_dx2_i)
+    ply_dx3_i = gUnaryUnion(ply_dx3_i)
+    
+  } # finish iterating over tiles
+
+  # merge tiles
+  if (i == 1){
+    ply_dx2 = ply_dx2_i
+    ply_dx3 = ply_dx3_i
+  } else {
+    ply_dx2 = raster::union(ply_dx2, ply_dx2_i)
+    ply_dx3 = raster::union(ply_dx3, ply_dx3_i)
+  }
+
+  # project back to lon/lat
+  ply_dx2 = spTransform(ply_dx2, crs(p_d1x))
+  ply_dx3 = spTransform(ply_dx3, crs(p_d1x))
+  
+  # save to filesystem
+  saveRDS(ply_dx2, dx2_rds)
+  saveRDS(ply_dx3, dx3_rds)
+}
+```
+
+## Overlay with Renewable Energy from NREL
+
+Extract average and area of overlap between zones and renewable energy potential areas, possibly at various depth bins.
+
+### Wind
+
+units: wind speed (m/s) at 90m hub height
+
+```{r wind}
+library(tidyverse)
+library(sf)
+library(raster)
+
+e_ca = extent(-117,-125,32,39)
+
+shp = '/Volumes/Best HD/nrel_data_big/nrel.gov/wind/pac/pacific_coast_90mwindspeed_off.shp'
+
+ply_ca = read_sf(shp) %>% as('Spatial') %>%
+  crop(e_ca)
+
+sp_plot(ply_ca['Speed_90'])
+```
+
+### Wave
+
+units: wave energy flux (kW/m)
+
+```{r wave}
+library(sp)
+shp = '/Volumes/Best HD/nrel_data_big/nrel.gov/wave/mhk-atlas_wave_wef_ann/wave_wef_ann.shp'
+
+ply_ca = read_sf(shp) %>% as('Spatial') %>%
+  crop(e_ca)
+
+spplot(ply_ca['ann_wef'])
+```
+
+
+### Tidal
+
+units: mean power
+
+```{r tidal}
+shp = '/Volumes/Best HD/nrel_data_big/nrel.gov/tide/tide_data_west/tide_data_west.shp'
+
+ply_ca = read_sf(shp) %>% as('Spatial') %>%
+  crop(e_ca)
+
+sp_plot(ply_ca['MEANPO'])
+```
 
 # Results
-
 
 # Conclusions 
 
 ## Communication with Stakeholders
 
-Products will be online and readily digestable by fisherman and other stakeholders.
+Products will be online and readily digestable by stakeholders.
 
 # References
