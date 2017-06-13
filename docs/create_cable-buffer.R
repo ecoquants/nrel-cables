@@ -1,6 +1,6 @@
 # load packages, installing if needed
 packages = c('tidyverse','rgdal','raster','ncdf4',
-             'rgeos','geosphere','edzer/sfr','eblondel/cleangeo','geojsonio',
+             'rgeos','geosphere','edzer/sfr','eblondel/cleangeo','geojsonio','maptools',
              'leaflet','knitr','rmarkdown','DT','RColorBrewer')
 for (pkg in packages){ # pkg= packages[1] # pkg = 'edzer/sfr'
   github_pkg = grepl('/', pkg)
@@ -31,38 +31,26 @@ redo = F # TODO DEBUG
 gdb           = '../data/SubmarineCables/NOAAChartedSubmarineCables.gdb'
 #depth_nc    = '../data/big/GEBCO_2014_2D.nc'                            # 1.87 GB -- too big for Github
 depth_nc      = '~/github/obis-lat-time-fig/data/GEBCO_2014_2D.nc'        # 1.87 GB -- too big for Github
-dx2_rds       = sprintf('../data/buf_2xdepth-incr%sm.rds', d_incr)
-dx3_rds       = sprintf('../data/buf_3xdepth-incr%sm.rds', d_incr)
 dx2_geo       = sprintf('../data/buf_2xdepth-incr%sm.geojson', d_incr)
 dx3_geo       = sprintf('../data/buf_3xdepth-incr%sm.geojson', d_incr)
-depth_rc_grd  = '../data/depth_rc.grd'
-#depth_rcm_grd = '../data/depth_rcm.grd'
-depth_rm_grd = '../data/depth_rm.grd'
-#lns_rds       = '../data/lns.rds'
+depth_m_grd   = '../data/depth_m.grd'
 lns_geo       = '../data/lns.geojson'
 lns_usa_geo   = '../data/lns_usa.geojson'
 eez_shp       = '~/mbon_data_big/technical/boundaries/eez/eez.shp'
-#usa_shp       = '../data/eez_usa.shp'
 usa_geo       = '../data/eez_usa.geojson'
-tiles_csv     = '../data/tiles.csv'
-tiles_geo     = '../data/tiles.geojson'
+lns_d1x_geo   = '../data/lns_d1x.geojson'
 
+# cables
 if (!file.exists(lns_geo)){
-  # cables
   fc = ogrListLayers(gdb)[[1]]
   lns = readOGR(dsn=gdb, layer=fc, verbose=F) %>% 
     st_as_sf()
-  
-  # DONE: move these danglers to Pacific left of existing
-  #idx = gCentroid(lns, byid=T) %>% coordinates() %>% .[,1] < 100
-  #lns = subset(lns, idx)
-  #saveRDS(lns, lns_rds)
   write_sf(lns, lns_geo)
 } else {
-  #lns_sf = readRDS(lns_geo)  
   lns = read_sf(lns_geo)  
 }
 
+# USA EEZ
 if (!file.exists(usa_geo)){
   #file.remove(usa_geo)
   read_sf(eez_shp) %>% 
@@ -76,7 +64,6 @@ usa = read_sf(usa_geo)
 
 if (!file.exists(lns_usa_geo)){
   system.time({
-    #lns_usa_sf = st_intersection(lns_sf, usa_sf) # 14.7 min
     lns_usa = st_intersection(lns, usa) # 10.1 min
   })
   #file.remove('../data/lns_usa.geojson')
@@ -84,346 +71,272 @@ if (!file.exists(lns_usa_geo)){
 }
 lns_usa = read_sf(lns_usa_geo)
 
-
-if (!file.exists(depth_rcm_grd)){
+if (!file.exists(depth_m_grd)){
   # load depth
-  depth_r = raster(depth_nc, layer = 'elevation')
-  
-  # convert lines to same projection as depth raster
-  #lns = spTransform(lns, crs(depth_r))
+  depth = raster(depth_nc, layer = 'elevation')
   
   # buffer out 1 pixel in decimal degrees
-  #lns_buf1 = rgeos::gBuffer(lns, width=0.008333333)
-  lns_buf1 = st_buffer(lns, dist=0.008333333)
-  
-  # extract to extent of submarine cable lines
-  #depth_rc = crop(depth_r, extent(lns_buf1))
-  depth_rc = crop(depth_r, extent(as(lns_buf1, 'Spatial')))
-  writeRaster(depth_rc, depth_rc_grd, overwrite=T)
-  #plot(depth_rc)
+  lns_buf1 = st_buffer(lns_usa, dist=0.008333333)
   
   # rasterize lines to mask depth
   system.time({
-    lns_r = rasterize(as(lns_buf1, 'Spatial'), depth_r, 1) # 14.7 min
+    lns_r = rasterize(as(lns_buf1, 'Spatial'), depth, 1) # 292.4/60 min
   })
   
   # mask out cells besides on/near cable lines
   system.time({
-    depth_rm = mask(depth_r, lns_r) # 141.577/60 min
+    depth_m = mask(depth, lns_r) # 123.4/60 min
   })
   
-  # clip depth to tile
-  depth_rm[depth_rm > 0] = NA
-  depth_rm = depth_rm * -1
+  # convert to bathymetric depth
+  system.time({
+    depth_m[depth_m > 0] = NA
+    depth_m = depth_m * -1
+  }) # 465.2/60 min
   
-  writeRaster(depth_rm, depth_rm_grd, overwrite=T)
+  system.time({
+    writeRaster(depth_m, '../data/depth_m.tif', overwrite=T)  # 230.1/60 min
+  })
+  system.time({
+    writeRaster(depth_m, depth_m_grd, overwrite=T)  # 100.5/60 min
+  })
 } else {
-  depth_rm = raster(depth_rm_grd)
+  depth_m = raster(depth_m_grd)
 }
 
-# create depth reclass table
-d_max = cellStats(depth_rm, 'max')
-tbl_reclass = data_frame(
-  depth_from=0, depth_to=250,	depth_1x=250) %>%
-  bind_rows(
-    data_frame(
-      depth_1x = seq(250 + d_incr/2, d_max, by=d_incr)) %>%
-      mutate(
-        depth_from = depth_1x - d_incr/2,
-        depth_to   = depth_1x + d_incr/2)) %>%
-  mutate(
-    depth_2x   = depth_1x*2,
-    depth_3x   = depth_1x*3)
+if (!file.exists(lns_d1x_geo)){
+  
+  # create depth reclass table
+  d_max = cellStats(depth_m, 'max')
+  tbl_reclass = data_frame(
+    depth_from=0, depth_to=250,	depth_1x=250) %>%
+    bind_rows(
+      data_frame(
+        depth_1x = seq(250 + d_incr/2, d_max, by=d_incr)) %>%
+        mutate(
+          depth_from = depth_1x - d_incr/2,
+          depth_to   = depth_1x + d_incr/2)) %>%
+    mutate(
+      depth_2x   = depth_1x*2,
+      depth_3x   = depth_1x*3)
+  
+  write_csv(tbl_reclass, '../data/tbl_reclass.csv')
+  
+  # reclassify raster
+  system.time({
+    r_d1x = reclassify(depth_m, tbl_reclass %>% select(depth_from, depth_to, depth_1x)) # 104.2/60 min
+  })
+  system.time({
+    writeRaster(r_d1x, '../data/r_d1x.tif', overwrite=T)  # 206.1/60 min
+  })
+  
+  # convert raster to vector
+  system.time({
+    p_d1x = rasterToPolygons(r_d1x, dissolve=T) # 179.4/60 min
+  }) 
+  names(p_d1x@data) = 'buf1x'
+  system.time({
+    p_d1x %>% st_as_sf() %>% write_sf('../data/p_d1x.geojson') # 3.5 sec
+  })
+  
+  # intersect lns to depth vector
+  system.time({
+    lns_d1x = raster::intersect(lns_usa %>% as('Spatial'), p_d1x) # 274.8/60 min
+  })
+  #file.remove('../data/lns_d1x.geojson')
+  lns_d1x %>% st_as_sf() %>% write_sf(lns_d1x_geo)
+} else {
+  lns_d1x = read_sf(lns_d1x_geo)
+}
 
-# reclassify raster
-system.time({
-  r_d1x = reclassify(depth_i, tbl_reclass %>% select(depth_from, depth_to, depth_1x)) # plot(r_d1x)
-})
-
-# convert raster to vector
-cat(sprintf('  convert to vector -- %s\n', Sys.time()))
-system.time({
-  p_d1x = rasterToPolygons(r_d1x, dissolve=T) # tiles_sf:nx = 8;ny = 4 -> 79.2 min [ * 32 rows / 60 min per hr = 42.2 hrs ]
-}) 
-names(p_d1x@data) = 'buf1x'
-
-# project & intersect lns to depth vector
-cat(sprintf('  project & intersect lns to depth vector -- %s\n', Sys.time()))
-lns_t = spTransform(lns, crs(p_d1x))
-system.time({
-  lns_i = raster::intersect(lns_t, p_d1x) # tiles_sf:nx = 8;ny = 4 -> 1.7 min [ * 32 rows / 60 min per hr = 53.3 min ]
-})
-
-
+#clean_geo = function(geo, sfx='clean-buffer'){
+clean_geo = function(geo, sfx='dirty', mv_dirty=T){
+  # inputs:
+  # - geo: geometry file like geojson, readable by read_sf()
+  # output:
+  # - geo_clean.geojson
+  # - geo_clean_issues-before.csv
+  # - geo_clean_issues-after.csv
+  # geo = '../tmp/ply_dx2_13_gcs.geojson'; sfx='dirty'; mv_dirty=T
+  v = read_sf(geo) %>% as('Spatial')
+  issues <- clgeo_CollectionReport(v) %>% .[.$valid==F,]
+  if (nrow(issues)>0){
+    cat(sprintf('  %d issue(s) before %s...\n', nrow(issues), sfx))
+    print(issues)
+    write_csv(issues, sprintf('%s_%s-issues-before.csv', tools::file_path_sans_ext(geo), sfx))
+    
+    if (mv_dirty){
+      geo_dirty = sprintf('%s_%s.geojson', tools::file_path_sans_ext(geo), sfx)
+      file.rename(geo, geo_dirty)
+      geo_clean = geo
+    } else {
+      geo_clean = sprintf('%s_%s.geojson', tools::file_path_sans_ext(geo), sfx)
+    }
+    
+    v2 = clgeo_Clean(v, strategy = 'BUFFER')
+    v2 %>% st_as_sf() %>% write_sf(geo_clean)
+    
+    issues <- clgeo_CollectionReport(v2) %>% .[.$valid==F,]
+    if (nrow(issues)>0){
+      cat(sprintf('  %d issue(s) after %s...\n', nrow(issues), sfx))
+      print(issues)
+      write_csv(issues, sprintf('%s_%s-issues-after.csv', tools::file_path_sans_ext(geo), sfx))
+    } else {
+      cat('  issues FIXED\n')
+    }
+  }
+}
 
 if (exists('ply_dx2')) rm(ply_dx2)
 # file.remove(dx2_rds); file.remove(dx3_rds)
 
 # generate if needed
-if(any(!file.exists(dx2_rds), !file.exists(dx3_rds))){
+if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
   
-  if (!file.exists(tiles_geo)){
-    # setup tiles for iteration
-    bb = extent(lns)
-    rx = c(floor(bb@xmin), ceiling(bb@xmax))
-    ry = c(floor(bb@ymin), ceiling(bb@ymax))
-    dx = diff(rx)
-    dy = diff(ry)
-    nx = 8
-    ny = 4
-    tx = dx/nx
-    ty = dy/ny
-    xseq = seq(rx[1], by=tx, length.out=nx)
-    yseq = seq(ry[1], by=ty, length.out=ny)
-    tiles = data_frame(xmin=numeric(0), xmax=numeric(0), ymin=numeric(0), ymax=numeric(0))
-    for (x in xseq){
-      for (y in yseq){
-        tiles = bind_rows(
-          tiles,
-          data_frame(
-            xmin=x, xmax=x+tx, ymin=y, ymax=y+ty)
-        )
-      }
-    }
-    tiles = tiles %>%
-      mutate(
-        id = row_number(),
-        wkt = sprintf(
-          'MULTIPOLYGON(((%g %g, %g %g, %g %g, %g %g, %g %g)))', 
-          xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax, xmin, ymin))
-    tiles_sf = st_as_sf(tiles, crs=leaflet:::epsg4326, wkt='wkt')
-    tiles_sf = tiles_sf %>%
-      mutate(
-        ctr   = st_centroid(wkt),
-        ctr_x = st_coordinates(ctr)[,'X'],
-        ctr_y = st_coordinates(ctr)[,'Y'])
-    write_sf(tiles_sf, tiles_geo)
-    write_csv(tiles, tiles_csv)
-  } else {
-    tiles_sf = read_sf(tiles_geo)
-  }
+  lns_d1x = read_sf('../data/lns_d1x.geojson')
   
-  
-  # iterate over tiles
-  for (i in 1:nrow(tiles_sf)){ # i = 1
+  # iterate over usa parts
+  parts = unique(lns_d1x$part)
+  for (i in 1:length(parts)){ # i = 1
     #for (i in 25:nrow(tiles_sf)){ # i = 25  # TODO DEBUG
+    p = parts[i]
+    p_name = lns_d1x %>% filter(part == p) %>% head(1) %>% .$GeoName
     
-    ply_dx2_i_rds = sprintf('../tmp/ply_dx2_%02d.rds',i)
-    ply_dx3_i_rds = sprintf('../tmp/ply_dx3_%02d.rds',i)
+    ply_dx2_i_geo = sprintf('../tmp/ply_dx2_i%02d.geojson',i)
+    ply_dx3_i_geo = sprintf('../tmp/ply_dx3_i%02d.geojson',i)
     
-    if (any(!file.exists(ply_dx2_i_rds), !file.exists(ply_dx3_i_rds), redo)){
+    if (any(!file.exists(ply_dx2_i_geo), !file.exists(ply_dx3_i_geo), redo)){
+      
+      cat(sprintf('%02d: part #%02d %s -- %s\n', i, p, p_name, Sys.time()))
       
       # setup extent
-      e_i = with(tiles_sf[i,], extent(xmin, xmax, ymin, ymax))
+      lns_i = lns_d1x %>% 
+        filter(part == p)
       
-      # crop lines
-      lns_i = crop(lns, e_i)
-    
-      # skip tile if not lines
-      if (length(lns_i)==0){
-        cat(sprintf('%02d: %03.1f,%03.1f -- SKIP: no cables in tile\n', i, e_i@xmin, e_i@ymin))
-        next
-      }
-      cat(sprintf('%02d: %03.1f,%03.1f -- %s\n', i, e_i@xmin, e_i@ymin, Sys.time()))
-      
-      # clip depth to tile
-      depth_i = crop(depth_rcm, e_i)
-      depth_i[depth_i > 0] = NA
-      depth_i = depth_i * -1
-      
-      if (all(is.na(getValues(depth_i)))){
-        cat('  SKIP: all depth_i is NA\n')
-        next
-      }
-      
-      # save for redistribution
-      #saveRDS(depth_i, sprintf('../tmp_dist/depth_%02d.rds', i))
-      
-      # create depth reclass table
-      d_max = cellStats(depth_i, 'max')
-      if (d_max <= 250){
-        mid_depths = 250  
-      } else {
-        mid_depths = seq(250 + d_incr/2, d_max, by=d_incr)
-      }
-      tbl_reclass = data_frame(
-        depth_from=0, depth_to=250,	depth_1x=250) %>%
-        bind_rows(
-          data_frame(
-            depth_1x = mid_depths) %>%
-            mutate(
-              depth_from = depth_1x - d_incr/2,
-              depth_to   = depth_1x + d_incr/2)) %>%
-        mutate(
-          depth_2x   = depth_1x*2,
-          depth_3x   = depth_1x*3)
-      #tbl_reclass %>% DT::datatable() # n=51
-      
-      # reclassify raster
-      cat(sprintf('  reclassify raster -- %s\n', Sys.time()))
-      r_d1x = reclassify(depth_i, tbl_reclass %>% select(depth_from, depth_to, depth_1x)) # plot(r_d1x)
-      
-      # convert raster to vector
-      cat(sprintf('  convert to vector -- %s\n', Sys.time()))
-      system.time({
-        p_d1x = rasterToPolygons(r_d1x, dissolve=T) # tiles_sf:nx = 8;ny = 4 -> 79.2 min [ * 32 rows / 60 min per hr = 42.2 hrs ]
-      }) 
-      names(p_d1x@data) = 'buf1x'
-      
-      # project & intersect lns to depth vector
-      cat(sprintf('  project & intersect lns to depth vector -- %s\n', Sys.time()))
-      lns_t = spTransform(lns, crs(p_d1x))
-      system.time({
-        lns_i = raster::intersect(lns_t, p_d1x) # tiles_sf:nx = 8;ny = 4 -> 1.7 min [ * 32 rows / 60 min per hr = 53.3 min ]
-      })
-      
-      if (is.null(lns_i)){
-        cat(sprintf('  SKIP: is.null(lns_i) -- %s\n', Sys.time()))
-        next
-      }
-      
-      # project to Albers Equal Area (with one-sixth rule) for units of meters
       cat(sprintf('  project to Albers -- %s\n', Sys.time()))
-      bb = bbox(lns_i)
-      lat_range = extendrange(bb['y',],f=-1/6)
-      crs_aea = CRS(
-        sprintf(
-          "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
-          lat_range[1], lat_range[2], mean(lat_range), mean(bb['x',])))
-      lns_a = spTransform(lns_i, crs_aea) # plot(lns_a)
+      bb = st_bbox(lns_i)
+      lat_range = extendrange(bb[c('ymin','ymax')], f=-1/6) # 5.796732 8.983678
+      crs_aea = sprintf(
+        "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
+        lat_range[1], lat_range[2], mean(lat_range), mean(bb[c('xmin','xmax')]))
+      lns_a = st_transform(lns_i, crs_aea)
       
       # iterate over buffer depths
-      bufs = lns_i@data %>%
+      bufs = lns_a %>%
+        as_data_frame() %>%
         group_by(buf1x) %>%
         summarize(n = n())
-      for (j in 1:nrow(bufs)){ # j = 1
+      for (j in 1:nrow(bufs)){ # j=1 # j=2
         b = bufs$buf1x[j]
         cat(sprintf('  %03d of %d bufs: %d m -- %s\n', j, nrow(bufs), b, Sys.time()))
         
-        lns_b = subset(lns_a, buf1x==b)
-        buf_dx2 = gBuffer(lns_b, width=b*2)  
-        buf_dx3 = gBuffer(lns_b, width=b*3)  
+        lns_b = lns_a %>% filter(buf1x==b)
+        
+        # buf_dx2 = st_buffer(lns_b, dist=b*2)  
+        # buf_dx3 = st_buffer(lns_b, dist=b*3)  
+        buf_dx2 = gBuffer(lns_b %>% as('Spatial'), width=b*2)  
+        buf_dx3 = gBuffer(lns_b %>% as('Spatial'), width=b*3)  
         
         if (j == 1){
           ply_dx2_i = buf_dx2
           ply_dx3_i = buf_dx3
         } else {
+          # suppressWarnings({
+          #   ply_dx2_i = st_union(ply_dx2_i, buf_dx2)
+          #   ply_dx3_i = st_union(ply_dx3_i, buf_dx3)
+          # })
           ply_dx2_i = raster::union(ply_dx2_i, buf_dx2)
           ply_dx3_i = raster::union(ply_dx3_i, buf_dx3)
         }
-      } # 3 min
+      }
       
+      #ply_dx2_i = st_union(ply_dx2_i)
+      #ply_dx3_i = st_union(ply_dx3_i)
       ply_dx2_i = gUnaryUnion(ply_dx2_i)
       ply_dx3_i = gUnaryUnion(ply_dx3_i)
       
-      saveRDS(ply_dx2_i, ply_dx2_i_rds)
-      saveRDS(ply_dx3_i, ply_dx3_i_rds)
-      
+      # st_write(ply_dx2_i, ply_dx2_i_geo)
+      # st_write(ply_dx3_i, ply_dx3_i_geo)
+      st_write(ply_dx2_i %>% st_as_sf(), ply_dx2_i_geo, quiet=T)
+      st_write(ply_dx3_i %>% st_as_sf(), ply_dx3_i_geo, quiet=T)
     } else {
-      ply_dx2_i = readRDS(ply_dx2_i_rds)
-      ply_dx3_i = readRDS(ply_dx3_i_rds)
+      #ply_dx2_i = st_read(ply_dx2_i_geo)
+      #ply_dx3_i = st_read(ply_dx3_i_geo)
+      ply_dx2_i = st_read(ply_dx2_i_geo, quiet=T) %>% as('Spatial')
+      ply_dx3_i = st_read(ply_dx3_i_geo, quiet=T) %>% as('Spatial')
     }
     
-    cat(sprintf('%02d -- %s\n', i, Sys.time()))
-    ply_dx2_i_gcs_rds = sprintf('../tmp/ply_dx2_%02d_gcs.rds',i)
-    ply_dx3_i_gcs_rds = sprintf('../tmp/ply_dx3_%02d_gcs.rds',i)
-    
-    if (any(!file.exists(ply_dx2_i_gcs_rds), !file.exists(ply_dx3_i_gcs_rds))){
+    ply_dx2_i_gcs_geo = sprintf('../tmp/ply_dx2_%02d_gcs.geojson',i)
+    ply_dx3_i_gcs_geo = sprintf('../tmp/ply_dx3_%02d_gcs.geojson',i)
+     
+    if (any(!file.exists(ply_dx2_i_gcs_geo), !file.exists(ply_dx3_i_gcs_geo))){
     
       cat(sprintf('  projecting to GCS geometry & projecting -- %s\n', Sys.time()))
-      ply_dx2_i_gcs = spTransform(ply_dx2_i, crs(depth_rcm))
-      ply_dx3_i_gcs = spTransform(ply_dx3_i, crs(depth_rcm))
+      # ply_dx2_i_gcs = st_transform(ply_dx2_i, leaflet:::epsg4326)
+      # ply_dx3_i_gcs = st_transform(ply_dx3_i, leaflet:::epsg4326)
+      ply_dx2_i_gcs = st_transform(ply_dx2_i %>% st_as_sf(), leaflet:::epsg4326) %>% mutate(buffer='2*depth')
+      ply_dx3_i_gcs = st_transform(ply_dx3_i %>% st_as_sf(), leaflet:::epsg4326) %>% mutate(buffer='3*depth')
       
-      # check geometry validity & issues for a sp spatial object
-      issues <- clgeo_CollectionReport(ply_dx2_i_gcs) %>% .[.$valid==F,]
-      if (nrow(issues)>0){
-        cat(sprintf('  cleaning up ply_dx2_i_gcs geometries -- %s\n', Sys.time()))
-        print(issues)
-        write_csv(issues, sprintf('../tmp/ply_dx2_%02d_gcs_issues.csv',i))
-        ply_dx2_i_gcs = clgeo_Clean(ply_dx2_i_gcs, strategy = 'BUFFER')
-        issues <- clgeo_CollectionReport(ply_dx2_i_gcs) %>% .[.$valid==F,]
-        if (nrow(issues)>0){
-          cat(sprintf('  ply_dx2_i_gcs geometries NOT FIXED -- %s\n', Sys.time())) 
-        }
-      }
-      issues <- clgeo_CollectionReport(ply_dx3_i_gcs) %>% .[.$valid==F,]
-      if (nrow(issues)>0) {
-        cat(sprintf('  cleaning up ply_dx3_i_gcs geometries -- %s\n', Sys.time()))
-        print(issues)
-        write_csv(issues, sprintf('../tmp/ply_dx3_%02d_gcs_issues.csv',i))
-        ply_dx3_i_gcs = clgeo_Clean(ply_dx3_i_gcs, strategy = 'BUFFER')
-        issues <- clgeo_CollectionReport(ply_dx3_i_gcs) %>% .[.$valid==F,]
-        if (nrow(issues)>0){
-          cat(sprintf('  ply_dx3_i_gcs geometries NOT FIXED -- %s\n', Sys.time())) 
-        }
-      }
+      st_write(ply_dx2_i_gcs, ply_dx2_i_gcs_geo, quiet=T)
+      st_write(ply_dx3_i_gcs, ply_dx3_i_gcs_geo, quiet=T)
       
-      cat(sprintf('  writing GCS -- %s\n', Sys.time()))
-      saveRDS(ply_dx2_i_gcs, ply_dx2_i_gcs_rds)
-      saveRDS(ply_dx3_i_gcs, ply_dx3_i_gcs_rds)
-      
-    } else {
-      cat(sprintf('  reading GCS -- %s\n', Sys.time()))
-      ply_dx2_i_gcs = readRDS(ply_dx2_i_gcs_rds)
-      ply_dx3_i_gcs = readRDS(ply_dx3_i_gcs_rds)
+      ply_dx2_i_gcs = ply_dx2_i_gcs %>% as('Spatial')
+      ply_dx3_i_gcs = ply_dx3_i_gcs %>% as('Spatial')
+
     }
-      
-    # merge lines
-    cat(sprintf('  union -- %s\n', Sys.time()))
+    ply_dx2_i_gcs = st_read(ply_dx2_i_gcs_geo, quiet=T) %>% as('Spatial') # %>% mutate(id=1)
+    ply_dx3_i_gcs = st_read(ply_dx3_i_gcs_geo, quiet=T) %>% as('Spatial')
+    
+    #cat(sprintf('%02d of %d parts -- %s\n', i, length(parts), Sys.time()))
+    # clean_geo(ply_dx2_i_gcs_geo)
+    # clean_geo(ply_dx3_i_gcs_geo)
+    #if (length(list.files('../tmp', '.*after.*', full.names=T)) > 0) stop('found "after" issues cleaning in ../tmp')
+    
+    
+    # merge
+    cat(sprintf('  union part %02d -- %s\n', i, Sys.time()))
     if (!exists('ply_dx2')){
       ply_dx2 = ply_dx2_i_gcs
       ply_dx3 = ply_dx3_i_gcs
     } else {
-      ply_dx2 = raster::union(ply_dx2, ply_dx2_i_gcs)
-      ply_dx3 = raster::union(ply_dx3, ply_dx3_i_gcs)
+      ply_dx2 = gUnion(ply_dx2, ply_dx2_i_gcs)
+      ply_dx3 = gUnion(ply_dx3, ply_dx3_i_gcs)
     }
-    
-  } # finish iterating over tiles_sf
-  
-  issues <- clgeo_CollectionReport(ply_dx2) %>% .[.$valid==F,]
-  if (nrow(issues)>0){
-    cat(sprintf('cleaning up ply_dx2 geometries -- %s\n', Sys.time()))
-    print(issues)
-    write_csv(issues, sprintf('../tmp/ply_dx2_%02d_gcs_issues.csv',i))
-    ply_dx2 = clgeo_Clean(ply_dx2, strategy = 'BUFFER')
-    issues <- clgeo_CollectionReport(ply_dx2) %>% .[.$valid==F,]
-    if (nrow(issues)>0){
-      cat(sprintf('  ply_dx2 geometries NOT FIXED -- %s\n', Sys.time())) 
-    }
-  }
-  issues <- clgeo_CollectionReport(ply_dx3) %>% .[.$valid==F,]
-  if (nrow(issues)>0) {
-    cat(sprintf('cleaning up ply_dx3 geometries -- %s\n', Sys.time()))
-    print(issues)
-    write_csv(issues, sprintf('../tmp/ply_dx3_%02d_gcs_issues.csv',i))
-    ply_dx3 = clgeo_Clean(ply_dx3, strategy = 'BUFFER')
-    issues <- clgeo_CollectionReport(ply_dx3) %>% .[.$valid==F,]
-    if (nrow(issues)>0){
-      cat(sprintf('  ply_dx3 geometries NOT FIXED -- %s\n', Sys.time())) 
-    }
-  }
-  
-  # save to filesystem
-  saveRDS(ply_dx2, dx2_rds)
-  saveRDS(ply_dx3, dx3_rds)
-  
-  # write to geojson
-  geojson_write(ply_dx2, file=dx2_geo)
-  geojson_write(ply_dx3, file=dx3_geo)
-}
 
-# 09: -151.0,4.0 -- SKIP: no cables in tile
-# 13: -136.5,4.0 -- SKIP: no cables in tile
-# 17: -122.0,4.0 -- SKIP: no cables in tile
-# 20: -122.0,47.5 -- SKIP: no cables in tile
-# 21: -107.5,4.0 -- SKIP: no cables in tile
-# 23: -107.5,33.0 -- SKIP: no cables in tile
-# 24: -107.5,47.5 -- 2017-06-07 09:30:53
-# SKIP: all depth_i is NA
-# 28: -93.0,47.5 -- 2017-06-07 09:32:47
-# SKIP: all depth_i is NA
-# 32: -78.5,47.5 -- SKIP: no cables in tile
-# There were 44 warnings (use warnings() to see them)
-# > warnings()
-# Warning messages:
-#   1: In raster::union(ply_dx2, ply_dx2_i) : non identical CRS
+  } # finish iterating over parts
+
+  cat(sprintf('union all -- %s\n', Sys.time()))
+  ply_dx2 = gUnaryUnion(ply_dx2)
+  ply_dx3 = gUnaryUnion(ply_dx3)
+
+  cat(sprintf('intersect all with eez -- %s\n', Sys.time()))
+  # add data frame
+  ply_dx2 = SpatialPolygonsDataFrame(ply_dx2, data_frame(buffer='depth*2'))
+  ply_dx3 = SpatialPolygonsDataFrame(ply_dx3, data_frame(buffer='depth*3'))
+  
+  # intersect with USA EEZ
+  usa_sp = usa %>% select(eez=GeoName, eez_part=part) %>% as('Spatial')
+  system.time({
+    ply_dx2 = raster::intersect(ply_dx2, usa_sp)
+    ply_dx3 = raster::intersect(ply_dx3, usa_sp)
+  }) # 26 min
+  
+  cat(sprintf('write all -- %s\n', Sys.time()))
+  ply_dx2 %>% st_as_sf() %>% write_sf(dx2_geo, quiet=T)
+  ply_dx3 %>% st_as_sf() %>% write_sf(dx3_geo, quiet=T)
+  
+  cat(sprintf('clean all -- %s\n', Sys.time()))
+  clean_geo(dx2_geo)
+  clean_geo(dx3_geo)
+  
+  # time estimate for script: 73 min 
+  # TODO: simplify as native geojson
+}
+cat(sprintf('FINISHED -- %s\n', Sys.time()))
+
+# Google Earth sanity check with measurement tool
+read_sf(dx2_geo) %>% write_sf('../data/buf_2xdepth-incr100m.kml')
+read_sf(dx3_geo) %>% write_sf('../data/buf_3xdepth-incr100m.kml')
+read_sf(lns_usa_geo) %>% write_sf('../data/lns_usa.kml')
+#file.remove('../data/lns_d1x.kml')
+read_sf(lns_d1x_geo) %>% select(buf1x, part, GeoName) %>% write_sf('../data/lns_d1x.kml')
