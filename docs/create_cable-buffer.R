@@ -1,12 +1,24 @@
-library(tidyverse)
-library(rgdal)
-library(raster)
-library(rgeos)
-#library(geosphere)
-library(sf)
+# load packages, installing if needed
+packages = c('tidyverse','rgdal','raster','ncdf4',
+             'rgeos','geosphere','edzer/sfr','eblondel/cleangeo','geojsonio',
+             'leaflet','knitr','rmarkdown','DT','RColorBrewer')
+for (pkg in packages){ # pkg= packages[1] # pkg = 'edzer/sfr'
+  github_pkg = grepl('/', pkg)
+  p = ifelse(github_pkg, sub('(.*)/(.*)', '\\2', pkg), pkg)
+  if (pkg == 'edzer/sfr') p = 'sf' # installed MacOS dependencies: https://github.com/edzer/sfr#macos
+  if (!require(p, character.only=T)){
+    if (github_pkg){
+      if (!require(devtools)) install.packages('devtools')
+      devtools::install_github(pkg)
+    } else {
+      install.packages(p)
+    }
+    library(p, character.only=T)
+  }
+}
+# override functions with duplicate names in different packages
 select = dplyr::select
-library(cleangeo) # devtools::install_github("eblondel/cleangeo")
-library(geojsonio)
+#st_drivers()
 
 # working directory
 if (basename(getwd()) == 'nrel-cables') setwd('docs')
@@ -24,21 +36,53 @@ dx3_rds       = sprintf('../data/buf_3xdepth-incr%sm.rds', d_incr)
 dx2_geo       = sprintf('../data/buf_2xdepth-incr%sm.geojson', d_incr)
 dx3_geo       = sprintf('../data/buf_3xdepth-incr%sm.geojson', d_incr)
 depth_rc_grd  = '../data/depth_rc.grd'
-depth_rcm_grd = '../data/depth_rcm.grd'
-lns_rds       = '../data/lns.rds'
+#depth_rcm_grd = '../data/depth_rcm.grd'
+depth_rm_grd = '../data/depth_rm.grd'
+#lns_rds       = '../data/lns.rds'
+lns_geo       = '../data/lns.geojson'
+lns_usa_geo   = '../data/lns_usa.geojson'
+eez_shp       = '~/mbon_data_big/technical/boundaries/eez/eez.shp'
+#usa_shp       = '../data/eez_usa.shp'
+usa_geo       = '../data/eez_usa.geojson'
+tiles_csv     = '../data/tiles.csv'
+tiles_geo     = '../data/tiles.geojson'
 
-if (!file.exists(lns_rds)){
+if (!file.exists(lns_geo)){
   # cables
   fc = ogrListLayers(gdb)[[1]]
-  lns = readOGR(dsn=gdb, layer=fc, verbose=F)
+  lns = readOGR(dsn=gdb, layer=fc, verbose=F) %>% 
+    st_as_sf()
   
-  # TODO: move these danglers to Pacific left of existing
-  idx = gCentroid(lns, byid=T) %>% coordinates() %>% .[,1] < 100
-  lns = subset(lns, idx)
-  saveRDS(lns, lns_rds)
+  # DONE: move these danglers to Pacific left of existing
+  #idx = gCentroid(lns, byid=T) %>% coordinates() %>% .[,1] < 100
+  #lns = subset(lns, idx)
+  #saveRDS(lns, lns_rds)
+  write_sf(lns, lns_geo)
 } else {
-  lns = readRDS(lns_rds)  
+  #lns_sf = readRDS(lns_geo)  
+  lns = read_sf(lns_geo)  
 }
+
+if (!file.exists(usa_geo)){
+  #file.remove(usa_geo)
+  read_sf(eez_shp) %>% 
+    filter(Sovereign1 == 'United States') %>%
+    st_cast('POLYGON') %>%
+    mutate(
+      part = row_number()) %>%
+    write_sf(usa_geo)
+}
+usa = read_sf(usa_geo)
+
+if (!file.exists(lns_usa_geo)){
+  system.time({
+    #lns_usa_sf = st_intersection(lns_sf, usa_sf) # 14.7 min
+    lns_usa = st_intersection(lns, usa) # 10.1 min
+  })
+  #file.remove('../data/lns_usa.geojson')
+  write_sf(lns_usa, lns_usa_geo)
+}
+lns_usa = read_sf(lns_usa_geo)
 
 
 if (!file.exists(depth_rcm_grd)){
@@ -46,25 +90,71 @@ if (!file.exists(depth_rcm_grd)){
   depth_r = raster(depth_nc, layer = 'elevation')
   
   # convert lines to same projection as depth raster
-  lns = spTransform(lns, crs(depth_r))
+  #lns = spTransform(lns, crs(depth_r))
   
   # buffer out 1 pixel in decimal degrees
-  lns_buf1 = rgeos::gBuffer(lns, width=0.008333333)
+  #lns_buf1 = rgeos::gBuffer(lns, width=0.008333333)
+  lns_buf1 = st_buffer(lns, dist=0.008333333)
   
   # extract to extent of submarine cable lines
-  depth_rc = crop(depth_r, extent(lns_buf1))
-  writeRaster(depth_rc, depth_rc_grd)
+  #depth_rc = crop(depth_r, extent(lns_buf1))
+  depth_rc = crop(depth_r, extent(as(lns_buf1, 'Spatial')))
+  writeRaster(depth_rc, depth_rc_grd, overwrite=T)
+  #plot(depth_rc)
   
   # rasterize lines to mask depth
-  lns_r = rasterize(lns_buf1, depth_rc, 1)
+  system.time({
+    lns_r = rasterize(as(lns_buf1, 'Spatial'), depth_r, 1) # 14.7 min
+  })
   
   # mask out cells besides on/near cable lines
-  depth_rcm = mask(depth_rc, lns_r)
+  system.time({
+    depth_rm = mask(depth_r, lns_r) # 141.577/60 min
+  })
   
-  writeRaster(depth_rcm, depth_rcm_grd)
+  # clip depth to tile
+  depth_rm[depth_rm > 0] = NA
+  depth_rm = depth_rm * -1
+  
+  writeRaster(depth_rm, depth_rm_grd, overwrite=T)
 } else {
-  depth_rcm = raster(depth_rcm_grd)
+  depth_rm = raster(depth_rm_grd)
 }
+
+# create depth reclass table
+d_max = cellStats(depth_rm, 'max')
+tbl_reclass = data_frame(
+  depth_from=0, depth_to=250,	depth_1x=250) %>%
+  bind_rows(
+    data_frame(
+      depth_1x = seq(250 + d_incr/2, d_max, by=d_incr)) %>%
+      mutate(
+        depth_from = depth_1x - d_incr/2,
+        depth_to   = depth_1x + d_incr/2)) %>%
+  mutate(
+    depth_2x   = depth_1x*2,
+    depth_3x   = depth_1x*3)
+
+# reclassify raster
+system.time({
+  r_d1x = reclassify(depth_i, tbl_reclass %>% select(depth_from, depth_to, depth_1x)) # plot(r_d1x)
+})
+
+# convert raster to vector
+cat(sprintf('  convert to vector -- %s\n', Sys.time()))
+system.time({
+  p_d1x = rasterToPolygons(r_d1x, dissolve=T) # tiles_sf:nx = 8;ny = 4 -> 79.2 min [ * 32 rows / 60 min per hr = 42.2 hrs ]
+}) 
+names(p_d1x@data) = 'buf1x'
+
+# project & intersect lns to depth vector
+cat(sprintf('  project & intersect lns to depth vector -- %s\n', Sys.time()))
+lns_t = spTransform(lns, crs(p_d1x))
+system.time({
+  lns_i = raster::intersect(lns_t, p_d1x) # tiles_sf:nx = 8;ny = 4 -> 1.7 min [ * 32 rows / 60 min per hr = 53.3 min ]
+})
+
+
 
 if (exists('ply_dx2')) rm(ply_dx2)
 # file.remove(dx2_rds); file.remove(dx3_rds)
@@ -72,32 +162,51 @@ if (exists('ply_dx2')) rm(ply_dx2)
 # generate if needed
 if(any(!file.exists(dx2_rds), !file.exists(dx3_rds))){
   
-  # setup tiles for iteration
-  bb = extent(lns)
-  rx = c(floor(bb@xmin), ceiling(bb@xmax))
-  ry = c(floor(bb@ymin), ceiling(bb@ymax))
-  dx = diff(rx)
-  dy = diff(ry)
-  nx = 8
-  ny = 4
-  tx = dx/nx
-  ty = dy/ny
-  xseq = seq(rx[1], by=tx, length.out=nx)
-  yseq = seq(ry[1], by=ty, length.out=ny)
-  xyseq = data_frame(xmin=numeric(0), xmax=numeric(0), ymin=numeric(0), ymax=numeric(0))
-  for (x in xseq){
-    for (y in yseq){
-      xyseq = bind_rows(
-        xyseq,
-        data_frame(
-          xmin=x, xmax=x+tx, ymin=y, ymax=y+ty)
-      )
+  if (!file.exists(tiles_geo)){
+    # setup tiles for iteration
+    bb = extent(lns)
+    rx = c(floor(bb@xmin), ceiling(bb@xmax))
+    ry = c(floor(bb@ymin), ceiling(bb@ymax))
+    dx = diff(rx)
+    dy = diff(ry)
+    nx = 8
+    ny = 4
+    tx = dx/nx
+    ty = dy/ny
+    xseq = seq(rx[1], by=tx, length.out=nx)
+    yseq = seq(ry[1], by=ty, length.out=ny)
+    tiles = data_frame(xmin=numeric(0), xmax=numeric(0), ymin=numeric(0), ymax=numeric(0))
+    for (x in xseq){
+      for (y in yseq){
+        tiles = bind_rows(
+          tiles,
+          data_frame(
+            xmin=x, xmax=x+tx, ymin=y, ymax=y+ty)
+        )
+      }
     }
+    tiles = tiles %>%
+      mutate(
+        id = row_number(),
+        wkt = sprintf(
+          'MULTIPOLYGON(((%g %g, %g %g, %g %g, %g %g, %g %g)))', 
+          xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax, xmin, ymin))
+    tiles_sf = st_as_sf(tiles, crs=leaflet:::epsg4326, wkt='wkt')
+    tiles_sf = tiles_sf %>%
+      mutate(
+        ctr   = st_centroid(wkt),
+        ctr_x = st_coordinates(ctr)[,'X'],
+        ctr_y = st_coordinates(ctr)[,'Y'])
+    write_sf(tiles_sf, tiles_geo)
+    write_csv(tiles, tiles_csv)
+  } else {
+    tiles_sf = read_sf(tiles_geo)
   }
   
+  
   # iterate over tiles
-  for (i in 1:nrow(xyseq)){ # i = 1
-    #for (i in 25:nrow(xyseq)){ # i = 25  # TODO DEBUG
+  for (i in 1:nrow(tiles_sf)){ # i = 1
+    #for (i in 25:nrow(tiles_sf)){ # i = 25  # TODO DEBUG
     
     ply_dx2_i_rds = sprintf('../tmp/ply_dx2_%02d.rds',i)
     ply_dx3_i_rds = sprintf('../tmp/ply_dx3_%02d.rds',i)
@@ -105,11 +214,11 @@ if(any(!file.exists(dx2_rds), !file.exists(dx3_rds))){
     if (any(!file.exists(ply_dx2_i_rds), !file.exists(ply_dx3_i_rds), redo)){
       
       # setup extent
-      e_i = with(xyseq[i,], extent(xmin, xmax, ymin, ymax))
+      e_i = with(tiles_sf[i,], extent(xmin, xmax, ymin, ymax))
       
       # crop lines
       lns_i = crop(lns, e_i)
-      
+    
       # skip tile if not lines
       if (length(lns_i)==0){
         cat(sprintf('%02d: %03.1f,%03.1f -- SKIP: no cables in tile\n', i, e_i@xmin, e_i@ymin))
@@ -157,7 +266,7 @@ if(any(!file.exists(dx2_rds), !file.exists(dx3_rds))){
       # convert raster to vector
       cat(sprintf('  convert to vector -- %s\n', Sys.time()))
       system.time({
-        p_d1x = rasterToPolygons(r_d1x, dissolve=T) # tiles:nx = 8;ny = 4 -> 79.2 min [ * 32 rows / 60 min per hr = 42.2 hrs ]
+        p_d1x = rasterToPolygons(r_d1x, dissolve=T) # tiles_sf:nx = 8;ny = 4 -> 79.2 min [ * 32 rows / 60 min per hr = 42.2 hrs ]
       }) 
       names(p_d1x@data) = 'buf1x'
       
@@ -165,7 +274,7 @@ if(any(!file.exists(dx2_rds), !file.exists(dx3_rds))){
       cat(sprintf('  project & intersect lns to depth vector -- %s\n', Sys.time()))
       lns_t = spTransform(lns, crs(p_d1x))
       system.time({
-        lns_i = raster::intersect(lns_t, p_d1x) # tiles:nx = 8;ny = 4 -> 1.7 min [ * 32 rows / 60 min per hr = 53.3 min ]
+        lns_i = raster::intersect(lns_t, p_d1x) # tiles_sf:nx = 8;ny = 4 -> 1.7 min [ * 32 rows / 60 min per hr = 53.3 min ]
       })
       
       if (is.null(lns_i)){
@@ -269,7 +378,7 @@ if(any(!file.exists(dx2_rds), !file.exists(dx3_rds))){
       ply_dx3 = raster::union(ply_dx3, ply_dx3_i_gcs)
     }
     
-  } # finish iterating over tiles
+  } # finish iterating over tiles_sf
   
   issues <- clgeo_CollectionReport(ply_dx2) %>% .[.$valid==F,]
   if (nrow(issues)>0){
