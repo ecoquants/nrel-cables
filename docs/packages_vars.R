@@ -1,7 +1,13 @@
 # load packages, installing if needed ----
-packages = c('tidyverse','rgdal','raster','ncdf4',
-             'rgeos','geosphere','edzer/sfr','eblondel/cleangeo','geojsonio','maptools',
-             'leaflet','knitr','rmarkdown','DT','RColorBrewer')
+packages = c(
+  # general data science
+  'tidyverse',  
+  # dynamic document creation
+  'knitr','rmarkdown','bookdown','DT', 
+  # plotting & mapping
+  'RColorBrewer','leaflet', 
+  # spatial analytical
+  'rgdal','raster','ncdf4','rgeos','geosphere','edzer/sfr','eblondel/cleangeo','geojsonio','maptools') 
 for (pkg in packages){ # pkg= packages[1] # pkg = 'edzer/sfr'
   github_pkg = grepl('/', pkg)
   p = ifelse(github_pkg, sub('(.*)/(.*)', '\\2', pkg), pkg)

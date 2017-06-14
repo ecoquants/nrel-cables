@@ -16,7 +16,11 @@ bibliography: nrel-cables.bib
 ---
 
 ```{r setup, include=FALSE}
-library(knitr)
+# set working directory
+if (basename(getwd()) == 'nrel-cables') setwd('docs')
+
+# load packages and variables
+source('./packages_vars.R')
 
 opts_chunk$set(warning=F, message=F)
 
@@ -25,131 +29,50 @@ if ("rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_knit$get("rmarkdow
 } else {
   opts_chunk$set(echo=F)
 }
-
-if (basename(getwd()) == 'nrel-cables') setwd('docs')
 ```
 
-# Introduction
+# Background
 
-Previous preliminary work [@amante_offshore_2016] and a couple industry reports [@communicationssecurityreliabilityandinteroperabilitycounciliv_clustering_2016; @communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014] inform this report.
-
-And another reference [@lopez_review_2013].
-
-## Importance of Marine Renewable Energy
-
--  Marine renewable energy is an important contribution to reducing our dependency on fossil fuels and carbon footprint contributing to climate change.
-
-- organizations:
-    - ICPC: International Cable Protection Committee
-    - NASCA: North American Submarine Cable Association
-
-## Importance of Submarine Cables
-
-- frequency of repair?
-
-## Minimizing Conflict through Spatial Avoidance
-
-"An effective submarine cable protection regime must account for the physical characteristics of submarine cables and the mechanical characteristics of the installation vessels and tools. These characteristics—along with weather, sea, and seabed conditions—greatly determine the specifics of a given cable installation or repair." [@communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014]
-
-- Overlap of cables an issue? Yes
-
-    "Clustering of Submarine Cable Systems: The clustering of submarine cables along particular routes (whether to avoid unfavorable sea floor topography, natural hazards, or man-made hazards such as dredging and dumping areas, fishing grounds, and energy infrastructure) increases the risk that installation or maintenance of one cable will cause direct physical disturbance to another, such as with plowing and grappling operations." [@communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014]
-
-
-## Benefits of Cooperation
-
-- Are cost savings possible through sharing cable infrastructure & maintenance between marine renewable energy transmission and existing submarine cables? 
-
-- Direct ecological benefits can result from developing offshore energy, such as de facto reserve creation and creation of hard surfaces for habitat forming species. Are other benefits possible with coordinate marine spatial planning, particularly between cable and renewable industries?
-
-[@pelc_renewable_2002; @gill_offshore_2005; @inger_marine_2009; @lester_evaluating_2013; @willsteed_assessing_2017]
-
+Demand for abundant and diverse resources in the oceans is growing, necessitating marine spatial planning. To inform development of Marine Hydrokinetic (MHK) and Offshore Wind (OSW) resources, DOE has asked NREL to identify — and mitigate where possible — the competing uses between MHK/OSW technologies and subsea power/telecoms cables. The first step in this work is to identify and quantify the overlap between the MHK/OSW resource availability and existing cable routes. Several publicly available data layers are available that identify cable routes (e.g. MarineCadastre.gov currently hosts an offshore cables geographical information system (GIS) data layer) and MHK/OSW resource density (MHK Atlas, Wind Prospector). The cable route linear features, however, do not indicate the setback distance necessary to accommodate subsea cable maintenance requirements. Preliminary work was done within NREL to evaluate the influence of subsea cable setback distance on the overlap with MHK/OSW for the west coast of the U.S [@amante_offshore_2016]. Industry reports [@communicationssecurityreliabilityandinteroperabilitycounciliv_clustering_2016; @communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014] from the International Cable Protection Committee (ICPC) of the North American Submarine Cable Association (NASCA; [n-a-s-c-a.org](https://www.n-a-s-c-a.org/)) advise on setback distances that inform this analysis.
 
 # Methods
 
-## Study Area
+## Study Area and Submarine Cables
 
-US EEZ for Pacific and Atlantic. Alaska & Hawaii?
+The study area included the 200 nm extent of US waters downloaded from MarineRegions.org ^[MarineRegions.org US exclusive economic zone (EEZ) data, version World_EEZ_v9_20161021] and overlapping the offshore cable data layer available through MarineCadastre.gov ^[MarineCadastre.gov cable metadata: https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html]. See Figure \@ref(fig:map_study-area).
 
-## Data
+TODO: add citations to bibliography:
 
-See Table \@ref(tab:data-sources).
+- [MarineRegions.org](http://marineregions.org/downloads.php) > Exclusive Economic Zones Boundaries (EEZ), version: World EEZ v9 (2016-10-21, 123 MB). Suggested citation:
 
-```{r data-sources, tidy=F}
-library(tidyverse)
+    - Flanders Marine Institute (2016). Maritime Boundaries Geodatabase, version 1. Available online at http://www.marineregions.org/. Consulted on 2017-04-25.
 
+- [MarineCadastre.gov cable metadata](https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html)
+
+See Table \@ref(tab:tbl_data-sources).
+
+```{r tbl_data-sources, tidy=F}
 read_csv('../data/data_sources.csv') %>%
   kable(
     caption = 'Data sources from preliminary report.', booktabs=T)
 ```
 
-### Submarine Cables
+```{r tbl_eez-usa}
+usa     = read_sf(usa_geo)
 
-- [North American Submarine Cable Association (NASCA)](https://www.n-a-s-c-a.org/)
-- data.noaa.gov:
-    * [NOAA Charted Submarine cables in the United States as of December 2012 - NOAA Data Catalog](https://data.noaa.gov/dataset/noaa-charted-submarine-cables-in-the-united-states-as-of-december-2012)
-    * [North American Submarine Cable Association (NASCA) Submarine Cables - NOAA Data Catalog](https://data.noaa.gov/dataset/north-american-submarine-cable-association-nasca-submarine-cables)
-
-See Figure \@ref(fig:map).
-
-```{r map, fig.cap='Map of NOAA Charted Submarine cables in the United States as of December 2012.'}
-library(sp)
-library(leaflet)
-
-lns_rds       = '../data/lns.rds'
-
-lns = readRDS(lns_rds)  
-
-leaflet(lns) %>%
-  addProviderTiles('Esri.OceanBasemap') %>%  # 'Esri.OceanBasemap'/'Stamen.TonerLite'
-  # see [all providers](http://leaflet-extras.github.io/leaflet-providers/preview/index.html)
-  addPolylines(
-    popup = ~sprintf("scaleBand: %s<br>description: %s<br>effectiveDate: %s", scaleBand, description, effectiveDate))
+usa %>% 
+  as_tibble() %>%
+  select(eez=Territory1, eez_part=part, area_km2=Area_km2) %>%
+  datatable() %>%
+  formatRound('area_km2', digits=1)
 ```
 
-### USA EEZ
+```{r map_study-area, fig.cap='Map of NOAA Charted Submarine cables in the United States as of December 2012.'}
+lns_usa = read_sf(lns_usa_geo)
 
-[MarineRegions.org](http://marineregions.org/downloads.php) > Exclusive Economic Zones Boundaries (EEZ), version: World EEZ v9 (2016-10-21, 123 MB)
-
-Citation:
-
-  Flanders Marine Institute (2016). Maritime Boundaries Geodatabase, version 1. Available online at http://www.marineregions.org/. Consulted on 2017-04-25.
-
-
-```{r usa eez}
-library(DT)
-library(RColorBrewer)
-usa_shp       = '../data/eez_usa.shp'
-
-usa_sf = read_sf(usa_shp)
-
-# display table
-usa_sf %>% 
-  select(-geometry) %>%
-  datatable()
-
-
-# TODO: intersect lines and USA EEZ
-# usa_x_lns_sf = usa_sf %>%
-#   st_intersects(lns_sf)
-# 
-# usa_lns_sf = usa_sf %>%
-#   filter(st_intersects(., lns_sf) %>% lengths() > 0)
-
-# usa_parts_sf <- st_cast(usa_sf, "POLYGON") %>%
-#   mutate(
-#     part = row_number())
-# usa_parts_sf %>%
-#     write_sf(usa_geo)
-# 
-# usa_parts_sf %>% as_data_frame() %>% select(-geometry) %>% View()
-#lns_sf = st_transform(lns, leaflet:::epsg4326)
-
-#usa = usa_sf
 usa = usa %>%
   filter(part %in% lns_usa$part)
   
-#pal <- colorFactor('Spectral', lns_usa$part)
 pal <- colorFactor(
   colorRampPalette(brewer.pal(11,'Spectral'))(length(usa$part)), 
   usa$part)
@@ -164,61 +87,49 @@ leaflet(usa) %>%
       scaleBand, description, effectiveDate)) %>%
   addPolygons(
    label = ~sprintf('%s', GeoName),
-   color = ~pal(part))
-
-lns_usa %>%
-  as_data_frame() %>%
-  select(-geometry) %>%
-  group_by(GeoName) %>%
-  summarize(n = n()) %>%
-  datatable()
-
-# lns_usa = read_sf('../data/lns_usa.geojson')
-
-# lns_sum = lns_usa %>%
-#   mutate(
-#     length = sapply(st_geometry(lns_usa_sf), st_length)) %>%
-#   group_by(GeoName) %>%
-#   summarize(
-#     n = n(),
-#     length_sum = sum(length))
-# 
-# lns_sum %>% View()
-# sf::st_length()
+   color = ~pal(part)) %>%
+  setView(-97, 38, zoom=3)
 ```
 
-
-### Tiles
-
-```{r}
-tiles_geo     = '../data/tiles.geojson'
-
-tiles_sf = read_sf(tiles_geo)
-
-leaflet(tiles_sf) %>%
-  addProviderTiles('Esri.OceanBasemap') %>%
-  addPolylines(data=lns,
-    popup = ~sprintf("scaleBand: %s<br>description: %s<br>effectiveDate: %s", scaleBand, description, effectiveDate)) %>%
-  addPolygons(
-   label = ~sprintf('%d', id)) %>%
-  addLabelOnlyMarkers(
-    ~ctr_x, ~ctr_y, 
-    label = ~sprintf('%d', id),
-    labelOptions = labelOptions(noHide = T, direction = 'auto', textOnly = T))
-```
-
-
-### Depth: GEBCO
+## Depth
 
 The bathymetric depth comes from the [GEBCO 30 arc-second grid](http://www.gebco.net/data_and_products/gridded_bathymetry_data/gebco_30_second_grid/). Here's there requested attribution:
 
 **GEBCO_2014 Grid, version 20150318, www.gebco.net**
 
-![](http://images.vliz.be/resized/64940_general-bathymetric-chart-of-the-oceans-gebco.png)
-
-### Renewable Energy
+## Renewable Energy
 
 NREL.
+
+## Avoidance Zones for Siting New Facilities
+
+"ICPC Recommendation 13 No. 2, which establishes a methodology for determining site-specific proximity limits between submarine cables and offshore wind facilities and a default separation distance in shallower waters of 500 meters on either side of an in-service submarine cable — a separation standard the principles of which also apply to other offshore renewable energy projects."
+    
+"Subsea Cables UK Guideline No. 6 (endorsed by NASCA), which establishes principles for determining safe proximity distances and negotiating proximity agreements between offshore wind farms and submarine cables and reflects extensive experience in the United Kingdom with managing spatial conflicts between offshore wind farms and submarine cables."
+
+"endorse a default separation distance of 500 meters in water depths of less than 75 meters and the greater of 500 meters or two times the depth of water in greater water depths."
+
+1. **Default separation distance** by depth:
+    - `<= 250 m`: 500 m
+    - `> 250 m`: 2 x depth
+
+Psudocode:
+
+```
+# buffer based on depth
+cables_buffers = list()
+for (x in unique(cable_cells$depth)){
+
+  cables_buffers[str(x)] = cable_cells %>%
+    subset(depth == x) %>%
+    buffer(x)
+
+}
+cable_buf = merge(cables_buffers) 
+
+# smooth out jagged edges between cells
+cable_buf = simplify(cable_buf)
+```
 
 ## Separation Zones for Routing New Cables
 
@@ -254,325 +165,52 @@ cable_buf = merge(cables_buffers)
 cable_buf = simplify(cable_buf)
 ```
 
-### Depth + Cables: Morro Bay example
+## Depth-Varying Buffer
 
-Initially, let's try the depth-varying buffer on a small experimental area of Morro Bay, CA where a floating offshore wind farm is currently proposed amongst [California Activities | BOEM](https://www.boem.gov/California/). We'll scale up to national later.
+A depth-varying buffer to the offshore cables, 2 \* depth for "minimum" and 3 \* depth for "recommended" separation zones for routing new cables, by first intersecting depth with cables, then iterating over each depth to apply the appropriate buffers before finally dissolving all buffers. In order to apply the buffer, I needed to project from geographic coordinates to a projection that minimizes area distortion, so chose Albers Equal Area and applied the ["one-sixth rule"]( http://desktop.arcgis.com/en/arcmap/latest/map/projections/albers-equal-area-conic.htm#GUID-2158C4F9-F197-458E-94F0-84933C1BE6B7) based on the extent of the cable features to minimize distortion.
 
-Here's the GEBCO depth for our initial Morro Bay study area:
-
-```{r depth}
-library(raster)
-select = dplyr::select
-#library(marmap)
-
-# files
-#depth_nc    = '../data/big/GEBCO_2014_2D.nc' # 1.87 GB -- too big for Github
-depth_nc    = '~/github/obis-lat-time-fig/data/GEBCO_2014_2D.nc' # 1.87 GB -- too big for Github
-
-# load depth
-depth_r = raster(depth_nc, layer = 'elevation')
-
-# extract to extent of submarine cable lines
-#depth_rc = crop(depth_r, extent(lns))
-
-# extract to Morro Bay area
-xmin = -121.29; xmax = -120.59; ymin = 35.04; ymax = 35.55
-depth_rc = crop(depth_r, extent(xmin, xmax, ymin, ymax)) # Morro Bay test
-depth_rc[depth_rc > 0] = NA
-depth_rc = depth_rc * -1
-plot(depth_rc)
-```
-
-Let's plot this in an interactive map interface:
-
-```{r leaflet cables}
-pal <- colorNumeric(
-  c("blue","purple"),  # RColorBrewer::display.brewer.all()
-  values(depth_rc), na.color = "transparent")
-
-leaflet() %>% 
-  addProviderTiles("Stamen.TonerLite") %>%
-  addRasterImage(depth_rc, colors = pal, opacity = 0.8) %>%
-  addLegend(pal = pal, values = values(depth_rc),
-    title = "Depth") %>%
-  addPolylines(
-    data = lns, color='orange',
-    popup = ~sprintf(
-      "scaleBand: %s<br>description: %s<br>effectiveDate: %s", 
-      scaleBand, description, effectiveDate)) %>%
-  setView(
-    seq(xmin, xmax, length.out=3)[2], 
-    seq(ymin, ymax, length.out=3)[2], 
-    zoom = 10)
-```
-
-### Depth-Varying Buffer: Morro Bay example
-
-Now we'll apply a depth-varying buffer to the offshore cables, 2 \* depth for "minimum" and 3 \* depth for "recommended" separation zones for routing new cables, by first intersecting depth with cables, then iterating over each depth to apply the appropriate buffers before finally dissolving all buffers. In order to apply the buffer, I needed to project from geographic coordinates to a projection that minimizes area distortion, so chose Albers Equal Area and applied the ["one-sixth rule"]( http://desktop.arcgis.com/en/arcmap/latest/map/projections/albers-equal-area-conic.htm#GUID-2158C4F9-F197-458E-94F0-84933C1BE6B7) based on the extent of the cable features to minimize distortion.
-
-```{r leaflet cables + buffer}
-library(rgeos)
-library(geosphere)
-library(sf)
-
-rds_dx2 = '../data/morro-bay_2xdepth.rds'
-rds_dx3 = '../data/morro-bay_3xdepth.rds'
-
-if(any(!file.exists(rds_dx2), !file.exists(rds_dx2))){
-
-  # convert raster to vector
-  depth_p = rasterToPolygons(depth_rc, dissolve=T)
-  names(depth_p@data) = 'depth'
-  #plot(depth_p)
-  
-  lns_t = spTransform(lns, crs(depth_p))
-  lns_i = raster::intersect(lns_t, depth_p) # 3 secs
-  
-  depths_m = lns_i@data %>%
-    group_by(depth) %>%
-    summarize(n = n())
-  
-  # depths_m %>%
-  #   arrange(desc(n))
-  
-  # Albers Equal Area, with one-sixth rule
-  bb = bbox(lns_i)
-  lat_range = extendrange(bb['y',],f=-1/6)
-  crs_aea = CRS(
-    sprintf(
-      "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
-      lat_range[1], lat_range[2], mean(lat_range), mean(bb['x',])))
-  lns_a = spTransform(lns_i, crs_aea)
-  
-  #for (d in depths_m$depth){ # m = 8
-  for (i in 1:nrow(depths_m)){ # i = 2
-    d = depths_m$depth[i]
-    #cat(sprintf('%03d of %d: %d m\n', i, nrow(depths_m), d))
-  
-    lns_d = subset(lns_a, depth==d)
-    buf_dx2 = gBuffer(lns_d, width=d*2)  
-    buf_dx3 = gBuffer(lns_d, width=d*3)  
-    
-    if (i == 1){
-      ply_dx2 = buf_dx2
-      ply_dx3 = buf_dx3
-    } else {
-      ply_dx2 = raster::union(ply_dx2, buf_dx2)
-      ply_dx3 = raster::union(ply_dx3, buf_dx3)
-    }
-  }
-  ply_dx2 = gUnaryUnion(ply_dx2)
-  ply_dx3 = gUnaryUnion(ply_dx3)
-  
-  ply_dx2 = spTransform(ply_dx2, crs(depth_p))
-  ply_dx3 = spTransform(ply_dx3, crs(depth_p))
-  
-  saveRDS(ply_dx2, rds_dx2)
-  saveRDS(ply_dx3, rds_dx3)
-}
-
-ply_dx2 = readRDS(rds_dx2)
-ply_dx3 = readRDS(rds_dx3)
+```{r map_cables}
+dx2     = read_sf(dx2_geo)
+dx3     = read_sf(dx3_geo)
+lns_d1x = read_sf(lns_d1x_geo)
 
 leaflet() %>% 
   addProviderTiles("Stamen.TonerLite", group = "B&W") %>%
   addProviderTiles('Esri.OceanBasemap', group = "Ocean") %>%  #
-  addRasterImage(
-    depth_rc, group='depth',
-    colors = pal, opacity = 0.8) %>%
-  addLegend(
-    pal = pal, values = values(depth_rc),
-    title = "Depth", position='bottomright') %>%
   addPolygons(
-    data = ply_dx3, group='buffer: 3*depth',
+    data = dx2, group='buffer: 3*depth',
     color='red', stroke=F, fillOpacity = 0.5) %>%
   addPolygons(
-    data = ply_dx2, group='buffer: 2*depth', 
+    data = dx3, group='buffer: 2*depth', 
     color='red', stroke=F, fillOpacity = 0.5) %>%
   addPolylines(
-    data = lns, group='cables', 
+    data = lns_d1x, group='cables', 
     color='black', opacity = 1, weight=1,
     popup = ~sprintf(
-      "scaleBand: %s<br>description: %s<br>effectiveDate: %s",
-      scaleBand, description, effectiveDate)) %>%
+      "scaleBand: %s<br>description: %s<br>effectiveDate: %s<br>EEZ: %s<br>EEZ part: %d<br>Buffer (1x): %d",
+      scaleBand, description, effectiveDate, GeoName, part, buf1x)) %>%
   addLayersControl(
     baseGroups = c("B&W", "Ocean"),
-    overlayGroups = c('depth', 'buffer: 3*depth', 'buffer: 2*depth', 'cables'),
+    overlayGroups = c('buffer: 3*depth', 'buffer: 2*depth', 'cables'),
     options = layersControlOptions(collapsed = FALSE)) %>%
-  setView(
-    seq(xmin, xmax, length.out=3)[2], 
-    seq(ymin, ymax, length.out=3)[2], 
-    zoom = 10)
+  setView(-97, 38, zoom=3)
 ```
 
-**Next steps**. The above R code works well for this small area, but will not scale well to the national level. I'll implement the intersection, buffering and dissolve operations in a [PostGIS](http://postgis.net/) spatial database, which has the advantage of much more efficient spatial indexing and operations.
-
-## Avoidance Zones for Siting New Facilities
-
-"ICPC Recommendation 13 No. 2, which establishes a methodology for determining site-specific proximity limits between submarine cables and offshore wind facilities and a default separation distance in shallower waters of 500 meters on either side of an in-service submarine cable — a separation standard the principles of which also apply to other offshore renewable energy projects."
-    
-"Subsea Cables UK Guideline No. 6 (endorsed by NASCA), which establishes principles for determining safe proximity distances and negotiating proximity agreements between offshore wind farms and submarine cables and reflects extensive experience in the United Kingdom with managing spatial conflicts between offshore wind farms and submarine cables."
-
-"endorse a default separation distance of 500 meters in water depths of less than 75 meters and the greater of 500 meters or two times the depth of water in greater water depths."
-
-1. **Default separation distance** by depth:
-    - `<= 250 m`: 500 m
-    - `> 250 m`: 2 x depth
-
-Psudocode:
-
-```
-# buffer based on depth
-cables_buffers = list()
-for (x in unique(cable_cells$depth)){
-
-  cables_buffers[str(x)] = cable_cells %>%
-    subset(depth == x) %>%
-    buffer(x)
-
-}
-cable_buf = merge(cables_buffers) 
-
-# smooth out jagged edges between cells
-cable_buf = simplify(cable_buf)
-```
-
-## Depth-Varying Buffer: CA Example
-
-
-```{r map ca}
-dx2_rds = sprintf('../data/ca-coast_2xdepth-classes.rds')
-dx3_rds = sprintf('../data/ca-coast_3xdepth-classes.rds')
-
-bb = extent(lns)
-
-regions = list(
-  all        = c(xmin = bb@xmin, ymin = bb@ymin, xmax = bb@xmax, ymax = bb@ymax),
-  `ca-coast` = c(xmin = -126, xmax = -116, ymin = 32, ymax = 42),
-  pacific    = c(xmin = -126, xmax = -116, ymin = 32, ymax = 42))
-region = 'ca-coast'
-
-dx2_rds = sprintf('../data/%s_2xdepth-classes.rds', region)
-dx3_rds = sprintf('../data/%s_3xdepth-classes.rds', region)
-tbl_reclass_csv = sprintf('../data/%s_depth-reclass.csv', region)
-
-
-# clip depth to US W Coast (eg bottom right: https://www.google.com/maps/place/32N+116W)
-# # US west coast
-v = regions[[region]]
-depth_rc = crop(depth_r, extent(v['xmin'], v['xmax'], v['ymin'], v['ymax']))
-depth_rc[depth_rc > 0] = NA
-depth_rc = depth_rc * -1
-#plot(depth_rc)
-
-ply_dx2 = readRDS(dx2_rds)
-ply_dx3 = readRDS(dx3_rds)
-
-pal <- colorNumeric(
-  c("blue","purple"),  # RColorBrewer::display.brewer.all()
-  values(depth_rc), na.color = "transparent")
-
-m = leaflet() %>% 
-  #addProviderTiles("Stamen.TonerLite", group = "B&W") %>%
-  addProviderTiles('Esri.OceanBasemap', group = "Ocean") %>%  #
-  addRasterImage(
-    depth_rc, group='depth',
-    colors = pal, opacity = 0.8) %>%
-  addLegend(
-    pal = pal, values = values(depth_rc),
-    title = "Depth", position='bottomright') %>%
-  addPolygons(
-    data = ply_dx3, group='buffer: 3*depth',
-    color='red', stroke=F, fillOpacity = 0.5) %>%
-  addPolygons(
-    data = ply_dx2, group='buffer: 2*depth', 
-    color='red', stroke=F, fillOpacity = 0.5) %>%
-  addPolylines(
-    data = lns, group='cables', 
-    color='black', opacity = 1, weight=1,
-    popup = ~sprintf(
-      "scaleBand: %s<br>description: %s<br>effectiveDate: %s",
-      scaleBand, description, effectiveDate)) %>%
-  addLayersControl(
-    baseGroups = c("B&W", "Ocean"),
-    overlayGroups = c('depth', 'buffer: 3*depth', 'buffer: 2*depth', 'cables'),
-    options = layersControlOptions(collapsed = FALSE))
-  
-bb = extent(depth_rc)
-m %>%
-  fitBounds(bb@xmin, bb@ymin, bb@xmax, bb@ymax)
-```
-
-## Buffering over Entire Area
-
-In order to apply the depth-varying buffer over the entirety of the cable layer without hitting memory issues, I divided the area into 32 tiles.
+# Results
 
 Generated by:
+
 - [create_cable-buffer.R](https://github.com/ecoquants/nrel-cables/blob/master/docs/create_cable-buffer.R)
 
-```{r tiled buffering at depth classes}
-library(tidyverse)
-library(sp)
-library(rgdal)
-library(leaflet)
+- [extract_cable-energy.R](https://github.com/ecoquants/nrel-cables/blob/master/docs/extract_cable-energy)
 
-# paths
-#gdb           = '../data/SubmarineCables/NOAAChartedSubmarineCables.gdb'
-#depth_nc    = '../data/big/GEBCO_2014_2D.nc'                            # 1.87 GB -- too big for Github
-#depth_nc      = '~/github/obis-lat-time-fig/data/GEBCO_2014_2D.nc'        # 1.87 GB -- too big for Github
-# dx2_rds       = sprintf('../data/buf_2xdepth-incr%sm.rds', d_incr)
-# dx3_rds       = sprintf('../data/buf_3xdepth-incr%sm.rds', d_incr)
-# #depth_rc_grd  = '../data/depth_rc.grd'
-# depth_rcm_grd = '../data/depth_rcm.grd'
-# lns_rds       = '../data/lns.rds'
- # lns = readRDS(lns_rds)  
-#depth_rc = raster(depth_rc_grd)
-# depth_rcm = raster(depth_rcm_grd)
+Google Earth files (*.kml):
 
-# cable lines
-gdb = '../data/SubmarineCables/NOAAChartedSubmarineCables.gdb'
-fc = ogrListLayers(gdb)[[1]]
-lns = readOGR(dsn=gdb, layer=fc, verbose=F)
-# TODO: move these danglers to Pacific left of existing
-idx = gCentroid(lns, byid=T) %>% coordinates() %>% .[,1] < 100
-lns = subset(lns, idx)
+- [buf_2xdepth-incr100m.kml](https://github.com/ecoquants/nrel-cables/raw/master/data/buf_2xdepth-incr100m.kml)
 
-# buffered polys
-d_incr = 100 # depth increment
-dx2_rds       = sprintf('../data/buf_2xdepth-incr%sm.rds', d_incr)
-dx3_rds       = sprintf('../data/buf_3xdepth-incr%sm.rds', d_incr)
-ply_dx2 = readRDS(dx2_rds)
-ply_dx3 = readRDS(dx3_rds)
+- [buf_3xdepth-incr100m.kml](https://github.com/ecoquants/nrel-cables/raw/master/data/buf_3xdepth-incr100m.kml)
 
-# pal <- colorNumeric(
-#   c("blue","purple"),  # RColorBrewer::display.brewer.all()
-#   values(depth_rcm), na.color = "transparent")
-
-#xmin = -121.29; xmax = -120.59; ymin = 35.04; ymax = 35.55
-leaflet() %>% 
-  addProviderTiles("Stamen.TonerLite", group = "B&W") %>%
-  addProviderTiles('Esri.OceanBasemap', group = "Ocean") %>%  #
-  #addRasterImage(depth_rcm, colors = pal, opacity = 0.8) %>%
-  #addLegend(
-  #  pal = pal, values = values(depth_rcm),
-  #  title = "depth_rcm") %>%
-  addPolygons(
-    data = ply_dx3, group='buffer: 3*depth',
-    color='red', stroke=F, fillOpacity = 0.5) %>%
-  addPolygons(
-    data = ply_dx2, group='buffer: 2*depth', 
-    color='red', stroke=F, fillOpacity = 0.5) %>%
-  addPolylines(
-    data = lns, group='cables', 
-    color='black', opacity = 1, weight=1,
-    popup = ~sprintf(
-      "scaleBand: %s<br>description: %s<br>effectiveDate: %s",
-      scaleBand, description, effectiveDate)) %>%
-  addLayersControl(
-    baseGroups = c("B&W", "Ocean"),
-    overlayGroups = c('depth', 'buffer: 3*depth', 'buffer: 2*depth', 'cables'),
-    options = layersControlOptions(collapsed = FALSE))
-```
+- [lns_d1x.kml](https://github.com/ecoquants/nrel-cables/raw/master/data/lns_d1x.kml)
 
 ## Overlay with Renewable Energy from NREL
 
@@ -582,35 +220,64 @@ Extract average and area of overlap between zones and renewable energy potential
 
 units: wind speed (m/s) at 90m hub height
 
-```{r wind}
-library(tidyverse)
-library(sf)
-library(raster)
+```{r map_wind, eval=F}
+wind = read_sf(wind_geo)
 
-e_ca = extent(-117,-125,32,39)
+wind %>% as('Spatial') %>%
+  spplot()
+```
 
-shp = '/Volumes/Best HD/nrel_data_big/nrel.gov/wind/pac/pacific_coast_90mwindspeed_off.shp'
 
-ply_ca = read_sf(shp) %>% as('Spatial') %>%
-  crop(e_ca)
+```{r tbl_wind}
+wind_cbls = read_csv(wind_cbls_csv)
 
-spplot(ply_ca['Speed_90'])
+wind_cbls %>%
+  select(-energy_num) %>%
+  rename(`speed m/s`=energy_lbl) %>%
+  mutate(
+   pct_region         = pct_region/100,
+   cable2_pct         = cable2_pct/100,
+   cable3_pct         = cable3_pct/100,
+   cable3_pct_region  = cable3_pct_region/100) %>%
+  datatable() %>%
+  formatRound(
+    c('area_km2','cable2_km2','cable3_km2'), 
+    digits=2) %>% 
+  formatPercentage(
+    c('pct_region','cable2_pct','cable3_pct','cable3_pct_region'), 
+    digits=1)
 ```
 
 ### Wave
 
 units: wave energy flux (kW/m)
 
-```{r wave}
-library(sp)
-shp = '/Volumes/Best HD/nrel_data_big/nrel.gov/wave/mhk-atlas_wave_wef_ann/wave_wef_ann.shp'
+```{r map_wave, eval=F}
+wave = read_sf(wave_geo)
 
-ply_ca = read_sf(shp) %>% as('Spatial') %>%
-  crop(e_ca)
+wave %>% as('Spatial') %>%
+  spplot()
+```
 
-spplot(ply_ca['ann_wef'])
 
-read_csv()
+```{r tbl_wave}
+wave_cbls = read_csv(wave_cbls_csv)
+
+wave_cbls %>%
+  select(-energy_num) %>%
+  rename(`flux kW/m`=energy_lbl) %>%
+  mutate(
+   pct_all        = pct_all/100,
+   cable2_pct     = cable2_pct/100,
+   cable3_pct     = cable3_pct/100,
+   cable3_pct_all = cable3_pct_all/100) %>%
+  datatable() %>%
+  formatRound(
+    c('area_km2','cable2_km2','cable3_km2'), 
+    digits=2) %>% 
+  formatPercentage(
+    c('pct_all','cable2_pct','cable3_pct','cable3_pct_all'), 
+    digits=1)
 ```
 
 
@@ -618,33 +285,52 @@ read_csv()
 
 units: mean power (W/m^2)
 
-```{r tidal}
-shp = '/Volumes/Best HD/nrel_data_big/nrel.gov/tide/tide_data_west/tide_data_west.shp'
+TODO: seperate tif into east and west for display in leaflet
 
-ply_ca = read_sf(shp) %>% as('Spatial') %>%
-  crop(e_ca)
+```{r map_tide, eval=F}
+tide = raster(tide_tif)
 
-# names(ply_ca)
-# 
-# summary(ply_ca['MEANPO'])
-# hist(ply_ca@data$MEANPO)
-
-spplot(ply_ca['MEANPO'])
+plot(tide_tif)
 ```
 
-### Next Steps
 
-TODO: stacked histogram by cbl2/(cbl3-cbl2)/other; hist(wind$Speed_90)
+```{r tbl_tide}
+tide_cbls = read_csv(tide_cbls_csv)
 
-Musial et al (2016): technical potential 7 - 11.5 m/s
+tide_cbls %>%
+  select(-energy_num) %>%
+  rename(`power W/m2`=energy_lbl) %>%
+  mutate(
+   pct_all        = pct_all/100,
+   cable2_pct     = cable2_pct/100,
+   cable3_pct     = cable3_pct/100,
+   cable3_pct_all = cable3_pct_all/100) %>%
+  datatable() %>%
+  formatRound(
+    c('area_km2','cable2_km2','cable3_km2'), 
+    digits=2) %>% 
+  formatPercentage(
+    c('pct_all','cable2_pct','cable3_pct','cable3_pct_all'), 
+    digits=1)
+```
+
+## Next Steps
+
+- stacked histogram by cbl2/(cbl3-cbl2)/other; hist(wind$Speed_90)
+
+- simplify as native geojson
+
+Musial et al (2016):
+
 - wind speed (m/s) -- Table A-3 (p. 48): <7, 7-8, 8-9, 9-10, 10-11, total
+
 - depth classes (m) -- Table B-1 (p. 49): <30, 30-60, 60-700, 700-1000, >1000, total
+
 - distance to shore (nm) -- Table B-2 (p. 50): <3, 3-12, 12-50, 50-200, total
+
 - by states
 
-TODO: simplify as native geojson
 
-# Results
 
 # Conclusions 
 
