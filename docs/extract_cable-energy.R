@@ -1,56 +1,8 @@
-# packages: load, installing if needed ----
-packages = c('tidyverse','rgdal','raster','geosphere', #'deldir',
-             'rgeos','edzer/sfr','eblondel/cleangeo','geojsonio')
-for (pkg in packages){ # pkg= packages[1] # pkg = 'edzer/sfr'
-  github_pkg = grepl('/', pkg)
-  p = ifelse(github_pkg, sub('(.*)/(.*)', '\\2', pkg), pkg)
-  if (pkg == 'edzer/sfr') p = 'sf' # installed MacOS dependencies: https://github.com/edzer/sfr#macos
-  if (!require(p, character.only=T)){
-    if (github_pkg){
-      if (!require(devtools)) install.packages('devtools')
-      devtools::install_github(pkg)
-    } else {
-      install.packages(p)
-    }
-    library(p, character.only=T)
-  }
-}
-# override functions with duplicate names in different packages
-select = dplyr::select
-
 # working directory
 if (basename(getwd()) == 'nrel-cables') setwd('docs')
 
-# variables & paths ----
-d_incr = 100 # depth increment
-
-# paths
-dx2_geo       = sprintf('../data/buf_2xdepth-incr%sm.geojson', d_incr)
-dx3_geo       = sprintf('../data/buf_3xdepth-incr%sm.geojson', d_incr)
-# wind
-wind_shps = list(
-  'Atlantic'       = '/Volumes/Best HD/nrel_data_big/nrel.gov/wind/atl/atlantic_coast_90mwindspeed_off.shp',
-  #gl  = '/Volumes/Best HD/nrel_data_big/nrel.gov/wind/gl/great_lakes_90mwindspeed_off.shp',
-  'Gulf of Mexico' = '/Volumes/Best HD/nrel_data_big/nrel.gov/wind/gom/gulf_of_mexico_90mwindspeed_off.shp',
-  'Hawaii'         = '/Volumes/Best HD/nrel_data_big/nrel.gov/wind/hi/HI_90mwindspeed_off.shp',
-  'Pacific'        = '/Volumes/Best HD/nrel_data_big/nrel.gov/wind/pac/pacific_coast_90mwindspeed_off.shp')
-wind_geo      = '../data/wind.geojson'
-wind_cbl2_geo = '../data/wind_cable2.geojson'
-wind_cbl3_geo = '../data/wind_cable3.geojson'
-wind_cbls_csv = '../data/wind_cables.csv'
-# wave
-wave_shp      = '/Volumes/Best HD/nrel_data_big/nrel.gov/wave/mhk-atlas_wave_wef_ann/wave_wef_ann.shp'
-wave_geo      = '../data/wave.geojson'
-wave_cbl2_geo = '../data/wave_cable2.geojson'
-wave_cbl3_geo = '../data/wave_cable3.geojson'
-wave_cbls_csv = '../data/wave_cables.csv'
-# tide
-tide_shps    = list(
-  West = '/Volumes/Best HD/nrel_data_big/nrel.gov/tide/tide_data_west/tide_data_west.shp',
-  East = '/Volumes/Best HD/nrel_data_big/nrel.gov/tide/tide_data_east/tide_data_east.shp')
-tide_tif      = '../data/tide.tif'
-tide_csv      = '../data/tide.csv'
-tide_cbls_csv = '../data/tide_cables.csv'
+# load packages and variables ----
+source('./packages_vars.R')
 
 # cables: read ----
 cbl2 = read_sf(dx2_geo) %>%

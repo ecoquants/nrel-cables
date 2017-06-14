@@ -1,45 +1,10 @@
-# load packages, installing if needed
-packages = c('tidyverse','rgdal','raster','ncdf4',
-             'rgeos','geosphere','edzer/sfr','eblondel/cleangeo','geojsonio','maptools',
-             'leaflet','knitr','rmarkdown','DT','RColorBrewer')
-for (pkg in packages){ # pkg= packages[1] # pkg = 'edzer/sfr'
-  github_pkg = grepl('/', pkg)
-  p = ifelse(github_pkg, sub('(.*)/(.*)', '\\2', pkg), pkg)
-  if (pkg == 'edzer/sfr') p = 'sf' # installed MacOS dependencies: https://github.com/edzer/sfr#macos
-  if (!require(p, character.only=T)){
-    if (github_pkg){
-      if (!require(devtools)) install.packages('devtools')
-      devtools::install_github(pkg)
-    } else {
-      install.packages(p)
-    }
-    library(p, character.only=T)
-  }
-}
-# override functions with duplicate names in different packages
-select = dplyr::select
-
 # working directory
 if (basename(getwd()) == 'nrel-cables') setwd('docs')
 
-# variables
-d_incr = 100 # depth increment
-redo = F # TODO DEBUG
+# load packages and variables ----
+source('./packages_vars.R')
 
-# paths
-gdb           = '../data/SubmarineCables/NOAAChartedSubmarineCables.gdb'
-#depth_nc    = '../data/big/GEBCO_2014_2D.nc'                            # 1.87 GB -- too big for Github
-depth_nc      = '~/github/obis-lat-time-fig/data/GEBCO_2014_2D.nc'        # 1.87 GB -- too big for Github
-dx2_geo       = sprintf('../data/buf_2xdepth-incr%sm.geojson', d_incr)
-dx3_geo       = sprintf('../data/buf_3xdepth-incr%sm.geojson', d_incr)
-depth_m_grd   = '../data/depth_m.grd'
-lns_geo       = '../data/lns.geojson'
-lns_usa_geo   = '../data/lns_usa.geojson'
-eez_shp       = '~/mbon_data_big/technical/boundaries/eez/eez.shp'
-usa_geo       = '../data/eez_usa.geojson'
-lns_d1x_geo   = '../data/lns_d1x.geojson'
-
-# cables
+# read cables ----
 if (!file.exists(lns_geo)){
   fc = ogrListLayers(gdb)[[1]]
   lns = readOGR(dsn=gdb, layer=fc, verbose=F) %>% 
@@ -49,7 +14,7 @@ if (!file.exists(lns_geo)){
   lns = read_sf(lns_geo)  
 }
 
-# USA EEZ
+# read USA EEZ ----
 if (!file.exists(usa_geo)){
   #file.remove(usa_geo)
   read_sf(eez_shp) %>% 
@@ -61,6 +26,7 @@ if (!file.exists(usa_geo)){
 }
 usa = read_sf(usa_geo)
 
+# intersect cables with eez ----
 if (!file.exists(lns_usa_geo)){
   system.time({
     lns_usa = st_intersection(lns, usa) # 10.1 min
@@ -70,6 +36,7 @@ if (!file.exists(lns_usa_geo)){
 }
 lns_usa = read_sf(lns_usa_geo)
 
+# depth raster masked to cables buffer ----
 if (!file.exists(depth_m_grd)){
   # load depth
   depth = raster(depth_nc, layer = 'elevation')
@@ -103,6 +70,7 @@ if (!file.exists(depth_m_grd)){
   depth_m = raster(depth_m_grd)
 }
 
+# intersect cables with raster ----- 
 if (!file.exists(lns_d1x_geo)){
   
   # create depth reclass table
@@ -149,6 +117,7 @@ if (!file.exists(lns_d1x_geo)){
 }
 
 clean_geo = function(geo, sfx='dirty', mv_dirty=T){
+  # clean up geometry
   # inputs:
   # - geo: geometry file like geojson, readable by read_sf()
   # output:
@@ -193,7 +162,7 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
   
   lns_d1x = read_sf('../data/lns_d1x.geojson')
   
-  # iterate over usa parts
+  # iterate over usa eez parts ----
   parts = unique(lns_d1x$part)
   for (i in 1:length(parts)){ # i = 1
     #for (i in 25:nrow(tiles_sf)){ # i = 25  # TODO DEBUG
@@ -207,7 +176,7 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
       
       cat(sprintf('%02d: part #%02d %s -- %s\n', i, p, p_name, Sys.time()))
       
-      # setup extent
+      # setup extent & project to Albers for buffering in meters
       lns_i = lns_d1x %>% 
         filter(part == p)
       
@@ -230,8 +199,7 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
         
         lns_b = lns_a %>% filter(buf1x==b)
         
-        # buf_dx2 = st_buffer(lns_b, dist=b*2)  
-        # buf_dx3 = st_buffer(lns_b, dist=b*3)  
+        # buffer ----
         buf_dx2 = gBuffer(lns_b %>% as('Spatial'), width=b*2)  
         buf_dx3 = gBuffer(lns_b %>% as('Spatial'), width=b*3)  
         
@@ -239,27 +207,19 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
           ply_dx2_i = buf_dx2
           ply_dx3_i = buf_dx3
         } else {
-          # suppressWarnings({
-          #   ply_dx2_i = st_union(ply_dx2_i, buf_dx2)
-          #   ply_dx3_i = st_union(ply_dx3_i, buf_dx3)
-          # })
           ply_dx2_i = raster::union(ply_dx2_i, buf_dx2)
           ply_dx3_i = raster::union(ply_dx3_i, buf_dx3)
         }
       }
       
-      #ply_dx2_i = st_union(ply_dx2_i)
-      #ply_dx3_i = st_union(ply_dx3_i)
+      # dissolve
       ply_dx2_i = gUnaryUnion(ply_dx2_i)
       ply_dx3_i = gUnaryUnion(ply_dx3_i)
       
-      # st_write(ply_dx2_i, ply_dx2_i_geo)
-      # st_write(ply_dx3_i, ply_dx3_i_geo)
+      # write temp geo
       st_write(ply_dx2_i %>% st_as_sf(), ply_dx2_i_geo, quiet=T)
       st_write(ply_dx3_i %>% st_as_sf(), ply_dx3_i_geo, quiet=T)
     } else {
-      #ply_dx2_i = st_read(ply_dx2_i_geo)
-      #ply_dx3_i = st_read(ply_dx3_i_geo)
       ply_dx2_i = st_read(ply_dx2_i_geo, quiet=T) %>% as('Spatial')
       ply_dx3_i = st_read(ply_dx3_i_geo, quiet=T) %>% as('Spatial')
     }
@@ -270,28 +230,17 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
     if (any(!file.exists(ply_dx2_i_gcs_geo), !file.exists(ply_dx3_i_gcs_geo))){
     
       cat(sprintf('  projecting to GCS geometry & projecting -- %s\n', Sys.time()))
-      # ply_dx2_i_gcs = st_transform(ply_dx2_i, leaflet:::epsg4326)
-      # ply_dx3_i_gcs = st_transform(ply_dx3_i, leaflet:::epsg4326)
       ply_dx2_i_gcs = st_transform(ply_dx2_i %>% st_as_sf(), leaflet:::epsg4326) %>% mutate(buffer='2*depth')
       ply_dx3_i_gcs = st_transform(ply_dx3_i %>% st_as_sf(), leaflet:::epsg4326) %>% mutate(buffer='3*depth')
       
       st_write(ply_dx2_i_gcs, ply_dx2_i_gcs_geo, quiet=T)
       st_write(ply_dx3_i_gcs, ply_dx3_i_gcs_geo, quiet=T)
       
-      ply_dx2_i_gcs = ply_dx2_i_gcs %>% as('Spatial')
-      ply_dx3_i_gcs = ply_dx3_i_gcs %>% as('Spatial')
-
     }
     ply_dx2_i_gcs = st_read(ply_dx2_i_gcs_geo, quiet=T) %>% as('Spatial') # %>% mutate(id=1)
     ply_dx3_i_gcs = st_read(ply_dx3_i_gcs_geo, quiet=T) %>% as('Spatial')
     
-    #cat(sprintf('%02d of %d parts -- %s\n', i, length(parts), Sys.time()))
-    # clean_geo(ply_dx2_i_gcs_geo)
-    # clean_geo(ply_dx3_i_gcs_geo)
-    #if (length(list.files('../tmp', '.*after.*', full.names=T)) > 0) stop('found "after" issues cleaning in ../tmp')
-    
-    
-    # merge
+    # merge cable buffers by eez parts ----
     cat(sprintf('  union part %02d -- %s\n', i, Sys.time()))
     if (!exists('ply_dx2')){
       ply_dx2 = ply_dx2_i_gcs
@@ -303,16 +252,18 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
 
   } # finish iterating over parts
 
+  # dissolve all
   cat(sprintf('union all -- %s\n', Sys.time()))
   ply_dx2 = gUnaryUnion(ply_dx2)
   ply_dx3 = gUnaryUnion(ply_dx3)
 
+  # clip and identify eez
   cat(sprintf('intersect all with eez -- %s\n', Sys.time()))
   # add data frame
   ply_dx2 = SpatialPolygonsDataFrame(ply_dx2, data_frame(buffer='depth*2'))
   ply_dx3 = SpatialPolygonsDataFrame(ply_dx3, data_frame(buffer='depth*3'))
   
-  # intersect with USA EEZ
+  # intersect with USA EEZ ----
   usa_sp = usa %>% select(eez=GeoName, eez_part=part) %>% as('Spatial')
   system.time({
     ply_dx2 = raster::intersect(ply_dx2, usa_sp)
@@ -331,9 +282,8 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
 }
 cat(sprintf('FINISHED -- %s\n', Sys.time()))
 
-# Google Earth sanity check with measurement tool
+# Google Earth sanity check with measurement tool ----
 read_sf(dx2_geo) %>% write_sf('../data/buf_2xdepth-incr100m.kml')
 read_sf(dx3_geo) %>% write_sf('../data/buf_3xdepth-incr100m.kml')
-read_sf(lns_usa_geo) %>% write_sf('../data/lns_usa.kml')
 #file.remove('../data/lns_d1x.kml')
 read_sf(lns_d1x_geo) %>% select(buf1x, part, GeoName) %>% write_sf('../data/lns_d1x.kml')
