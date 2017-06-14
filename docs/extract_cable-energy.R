@@ -173,12 +173,10 @@ if (!file.exists(tide_geo)){
 }
 
 # wave: read ----
-# units: wave energy flux (kW/m)
 if (!file.exists(wave_geo)){
   wave = read_sf(wave_shp) # 42234 features
   
   # wave: categorize and aggregate by energy classes ----
-  # TODO: rerun wave with cut(include.lowest=T) to get rid of NAs in wave_cables.csv
   wave = wave %>%
     filter(ann_wef != -9999) %>%
     mutate(
@@ -192,8 +190,7 @@ if (!file.exists(wave_geo)){
   
   # calculate area
   wave$area_km2 = areaPolygon(wave) / (1000*1000)
-  # wave@data %>% %>% summary # check for NAs
-  
+
   # write to geojson
   wave %>% st_as_sf() %>% write_sf(wave_geo)
 }
@@ -245,13 +242,6 @@ if (!file.exists(wave_cbls_csv)){
 }
 
 # wind: read ----
-# TODO: stacked histogram by cbl2/(cbl3-cbl2)/other; hist(wind$Speed_90)
-#
-# Musial et al (2016): technical potential 7 - 11.5 m/s
-# - wind speed (m/s) -- Table A-3 (p. 48): <7, 7-8, 8-9, 9-10, 10-11, total
-# - depth classes (m) -- Table B-1 (p. 49): <30, 30-60, 60-700, 700-1000, >1000, total
-# - distance to shore (nm) -- Table B-2 (p. 50): <3, 3-12, 12-50, 50-200, total
-# - by states
 if (!file.exists(wind_geo)){
   
   for (i in 1:length(wind_shps)){ # i=1
@@ -275,7 +265,6 @@ if (!file.exists(wind_geo)){
       wind = raster::union(wind, v)
     }
   } # 1.3 min
-  # wind_0 = wind
   
   # wind: categorize and aggregate by energy classes ----
   wind@data = wind@data %>%

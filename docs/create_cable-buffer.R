@@ -328,7 +328,6 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
   clean_geo(dx3_geo)
   
   # time estimate for script: 73 min 
-  # TODO: simplify as native geojson
 }
 cat(sprintf('FINISHED -- %s\n', Sys.time()))
 

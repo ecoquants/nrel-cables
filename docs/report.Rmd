@@ -609,6 +609,8 @@ ply_ca = read_sf(shp) %>% as('Spatial') %>%
   crop(e_ca)
 
 spplot(ply_ca['ann_wef'])
+
+read_csv()
 ```
 
 
@@ -629,6 +631,18 @@ ply_ca = read_sf(shp) %>% as('Spatial') %>%
 
 spplot(ply_ca['MEANPO'])
 ```
+
+### Next Steps
+
+TODO: stacked histogram by cbl2/(cbl3-cbl2)/other; hist(wind$Speed_90)
+
+Musial et al (2016): technical potential 7 - 11.5 m/s
+- wind speed (m/s) -- Table A-3 (p. 48): <7, 7-8, 8-9, 9-10, 10-11, total
+- depth classes (m) -- Table B-1 (p. 49): <30, 30-60, 60-700, 700-1000, >1000, total
+- distance to shore (nm) -- Table B-2 (p. 50): <3, 3-12, 12-50, 50-200, total
+- by states
+
+TODO: simplify as native geojson
 
 # Results
 
