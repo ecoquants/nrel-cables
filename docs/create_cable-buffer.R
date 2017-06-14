@@ -18,7 +18,6 @@ for (pkg in packages){ # pkg= packages[1] # pkg = 'edzer/sfr'
 }
 # override functions with duplicate names in different packages
 select = dplyr::select
-#st_drivers()
 
 # working directory
 if (basename(getwd()) == 'nrel-cables') setwd('docs')
@@ -149,7 +148,6 @@ if (!file.exists(lns_d1x_geo)){
   lns_d1x = read_sf(lns_d1x_geo)
 }
 
-#clean_geo = function(geo, sfx='clean-buffer'){
 clean_geo = function(geo, sfx='dirty', mv_dirty=T){
   # inputs:
   # - geo: geometry file like geojson, readable by read_sf()
