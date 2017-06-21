@@ -2,31 +2,36 @@
 title: "Submarine Cable Analysis for Marine Renewable Energy Development"
 csl: apa.csl
 output:
+  bookdown::pdf_document2:
+    keep_tex: yes
+    toc: yes
   bookdown::html_document2:
-    code_folding: hide
     number_sections: yes
     toc: yes
     toc_depth: 4
     toc_float: yes
-  bookdown::pdf_document2:
-    toc: yes
   bookdown::word_document2:
     toc: yes
+tables: yes
 bibliography: nrel-cables.bib
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, eval=T}
 # set working directory
 if (basename(getwd()) == 'nrel-cables') setwd('docs')
 
 # load packages and variables
 source('./packages_vars.R')
 
-opts_chunk$set(warning=F, message=F)
+#opts_chunk$set(warning=F, message=F)
+opts_chunk$set(warning=F, message=F, eval=T) # DEBUG
 
-if ("rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_knit$get("rmarkdown.pandoc.to") == 'html'){
-  opts_chunk$set(echo=T)
+if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_knit$get("rmarkdown.pandoc.to") == 'html'){
+  out_html = T
+  #opts_chunk$set(echo=T)
+  opts_chunk$set(echo=F)
 } else {
+  out_html = F
   opts_chunk$set(echo=F)
 }
 ```
@@ -39,7 +44,7 @@ Demand for abundant and diverse resources in the oceans is growing, necessitatin
 
 ## Study Area and Submarine Cables
 
-The study area included the 200 nm extent of US waters downloaded from MarineRegions.org ^[MarineRegions.org US exclusive economic zone (EEZ) data, version World_EEZ_v9_20161021] and overlapping the offshore cable data layer available through MarineCadastre.gov ^[MarineCadastre.gov cable metadata: https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html]. See Figure \@ref(fig:map_study-area).
+The study area included the 200 nm extent of US waters downloaded from MarineRegions.org ^[MarineRegions.org US exclusive economic zone (EEZ) data, version World_EEZ_v9_20161021] and overlapping the offshore cable data layer available through MarineCadastre.gov ^[MarineCadastre.gov cable metadata: https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html]. See Figure \@ref(fig:mapStudyArea).
 
 TODO: add citations to bibliography:
 
@@ -49,38 +54,85 @@ TODO: add citations to bibliography:
 
 - [MarineCadastre.gov cable metadata](https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html)
 
-See Table \@ref(tab:tbl_data-sources).
+See Table \@ref(tab:tblDataSources).
 
-```{r tbl_data-sources, tidy=F}
+```{r tblDataSources, eval=T}
 read_csv('../data/data_sources.csv') %>%
   kable(
-    caption = 'Data sources from preliminary report.', booktabs=T)
+    caption = 'Data sources from preliminary report.') # , booktabs=T)
 ```
 
-```{r tbl_eez-usa}
-usa     = read_sf(usa_geo)
+## tbl_eez-usa
 
-usa %>% 
+```{r tbl-eez-usa, eval=T}
+usa = read_sf(usa_geo)
+
+eez_usa_tbl = usa %>%
   as_tibble() %>%
-  select(eez=Territory1, eez_part=part, area_km2=Area_km2) %>%
-  datatable() %>%
-  formatRound('area_km2', digits=1)
+  select(eez=Territory1, eez_part=part, area_km2=Area_km2)
+
+if (out_html){
+  eez_usa_tbl %>%
+    datatable() %>%
+    formatRound('area_km2', digits=1)
+} else {
+  eez_usa_tbl %>%
+    kable(caption = 'EEZ parts for USA.') # , booktabs=T)
+}
 ```
 
-```{r map_study-area, fig.cap='Map of NOAA Charted Submarine cables in the United States as of December 2012.'}
+```{r map-span-dateline, eval=F}
+
+l <- "LINESTRING(-150.5 57.0,-160.5 57.0,-170.5 57.0,179.5 57.0,169.5 57.0,159.5 57.0)" %>%
+  sf::st_as_sfc(crs = "+init=epsg:4326")
+
+l_sp <- l %>% as("Spatial") %>%
+  sp::spTransform(l_sp,"+proj=longlat +datum=WGS84 +lon_wrap=180")
+sp::proj4string(l_sp)
+bbox(l_sp)
+
+m <- l_sp %>%
+  leaflet() %>%
+  addProviderTiles("Esri.OceanBasemap") %>%
+  addPolylines(weight = 4, opacity = 0.35, color = 'black')
+m
+```
+
+TODO:
+
+* [python - Shapely polygons crossing the antimeridian - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/226605/shapely-polygons-crossing-the-antimeridian)
+* [r - Use different center than the prime meridian in plotting a world map - Stack Overflow](https://stackoverflow.com/questions/10620862/use-different-center-than-the-prime-meridian-in-plotting-a-world-map)
+* [ogr - How to change shapefile longitude from -180 - 180 to 0 - 360? - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/79447/how-to-change-shapefile-longitude-from-180-180-to-0-360)
+* [sf::st_transform not honoring +lon_wrap · Issue #280 · edzer/sfr](https://github.com/edzer/sfr/issues/280)
+* [Moving The Earth (well, Alaska & Hawaii) With R | rud.is](https://rud.is/b/2014/11/16/moving-the-earth-well-alaska-hawaii-with-r/)
+* [Administrative Maps and Projections in R - AriLamstein.com](https://www.arilamstein.com/blog/2015/07/23/administrative-level-1-maps-and-projections/)
+* [Mapping Data in R · Adam Olson](http://adamolson.org/2015/07/15/post_about_maps/)
+* [Mapping All Fifty U.S. States](https://cran.r-project.org/web/packages/fiftystater/vignettes/fiftystater.html)
+* [fiftystater/make_mapfile.R at master · wmurphyrd/fiftystater](https://github.com/wmurphyrd/fiftystater/blob/master/data-raw/make_mapfile.R)
+* [Mapping All Fifty U.S. States](https://cran.r-project.org/web/packages/fiftystater/vignettes/fiftystater.html)
+* [r - Relocating Alaska and Hawaii on thematic map of the USA with ggplot2 - Stack Overflow](https://stackoverflow.com/questions/13757771/relocating-alaska-and-hawaii-on-thematic-map-of-the-usa-with-ggplot2/13767984#13767984)
+* [ohiprep/model_create_regions.py at 66bcf4e39b63b154437dda55aec6ed825ac47f05 · OHI-Science/ohiprep](https://github.com/OHI-Science/ohiprep/blob/66bcf4e39b63b154437dda55aec6ed825ac47f05/globalprep/spatial/NCEAS-Regions_v2014/model_create_regions.py)
+
+```{r mapStudyArea, eval=T, fig.cap='Map of NOAA Charted Submarine cables in the United States as of December 2012.'}
 lns_usa = read_sf(lns_usa_geo)
 
 usa = usa %>%
   filter(part %in% lns_usa$part)
-  
+
+# usa %>%
+#   as_tibble() %>%
+#   select(eez=Territory1, eez_part=part, area_km2=Area_km2) %>%
+#   datatable() %>%
+#   formatRound('area_km2', digits=1)
+
 pal <- colorFactor(
-  colorRampPalette(brewer.pal(11,'Spectral'))(length(usa$part)), 
+  colorRampPalette(brewer.pal(11,'Spectral'))(length(usa$part)),
   usa$part)
 
-leaflet(usa) %>%
+m = leaflet(usa) %>%
   addProviderTiles('Esri.OceanBasemap') %>%
   addPolylines(
-    data = lns_usa, group='cables', 
+    data = lns_usa, group='cables',
     color='black', opacity = 1, weight=1,
     popup = ~sprintf(
       "scaleBand: %s<br>description: %s<br>effectiveDate: %s",
@@ -89,6 +141,48 @@ leaflet(usa) %>%
    label = ~sprintf('%s', GeoName),
    color = ~pal(part)) %>%
   setView(-97, 38, zoom=3)
+
+if (out_html){
+  m
+} else {
+
+  # [How to save Leaflet in R map as png or jpg file? - Stack Overflow](https://stackoverflow.com/questions/31336898/how-to-save-leaflet-in-r-map-as-png-or-jpg-file)
+  m_html = '../tmp/map_study-area.html'
+  m_png  = '../tmp/map_study-area.png'
+  saveWidget(m, m_html, selfcontained=F)
+  webshot(m_html, file=m_png, cliprect="viewport")
+  #knitr::include_graphics(m_png)
+
+  #TODO!
+  #plot(usa['part'])
+
+  #fortify(region = "STATE_NAME")
+
+  #crimes <- data.frame(state = tolower(rownames(USArrests)), USArrests)
+  # map_id creates the aesthetic mapping to the state name column in your data
+  # p <- ggplot(crimes, aes(map_id = state)) +
+  #   # map points to the fifty_states shape data
+  #   geom_map(fill='gray80', color='white',map=fifty_states) +
+  #   geom_map(fill='gray80', color='white',map=fifty_states) +
+  #   expand_limits(x = fifty_states$long, y = fifty_states$lat) +
+  #   coord_map() +
+  #   #scale_x_continuous(breaks = NULL) +
+  #   #scale_y_continuous(breaks = NULL) +
+  #   labs(x = "", y = "") +
+  #   fifty_states_inset_boxes()
+  #   #theme(legend.position = "bottom",
+  #   #      panel.background = element_blank())
+  # p
+  #
+  #
+  # wrld = map_data('world')
+  #
+  # p = ggplot() + geom_polygon(data=wrld, aes(x=long, y=lat, group=group), color='white', fill='gray10')
+  # p
+  #
+  #
+
+}
 ```
 
 ## Depth
@@ -104,7 +198,7 @@ NREL.
 ## Avoidance Zones for Siting New Facilities
 
 "ICPC Recommendation 13 No. 2, which establishes a methodology for determining site-specific proximity limits between submarine cables and offshore wind facilities and a default separation distance in shallower waters of 500 meters on either side of an in-service submarine cable — a separation standard the principles of which also apply to other offshore renewable energy projects."
-    
+
 "Subsea Cables UK Guideline No. 6 (endorsed by NASCA), which establishes principles for determining safe proximity distances and negotiating proximity agreements between offshore wind farms and submarine cables and reflects extensive experience in the United Kingdom with managing spatial conflicts between offshore wind farms and submarine cables."
 
 "endorse a default separation distance of 500 meters in water depths of less than 75 meters and the greater of 500 meters or two times the depth of water in greater water depths."
@@ -125,7 +219,7 @@ for (x in unique(cable_cells$depth)){
     buffer(x)
 
 }
-cable_buf = merge(cables_buffers) 
+cable_buf = merge(cables_buffers)
 
 # smooth out jagged edges between cells
 cable_buf = simplify(cable_buf)
@@ -159,7 +253,7 @@ for (x in unique(cable_cells$depth)){
     buffer(x)
 
 }
-cable_buf = merge(cables_buffers) 
+cable_buf = merge(cables_buffers)
 
 # smooth out jagged edges between cells
 cable_buf = simplify(cable_buf)
@@ -174,17 +268,17 @@ dx2     = read_sf(dx2_geo)
 dx3     = read_sf(dx3_geo)
 lns_d1x = read_sf(lns_d1x_geo)
 
-leaflet() %>% 
+leaflet() %>%
   addProviderTiles("Stamen.TonerLite", group = "B&W") %>%
   addProviderTiles('Esri.OceanBasemap', group = "Ocean") %>%  #
   addPolygons(
     data = dx2, group='buffer: 3*depth',
     color='red', stroke=F, fillOpacity = 0.5) %>%
   addPolygons(
-    data = dx3, group='buffer: 2*depth', 
+    data = dx3, group='buffer: 2*depth',
     color='red', stroke=F, fillOpacity = 0.5) %>%
   addPolylines(
-    data = lns_d1x, group='cables', 
+    data = lns_d1x, group='cables',
     color='black', opacity = 1, weight=1,
     popup = ~sprintf(
       "scaleBand: %s<br>description: %s<br>effectiveDate: %s<br>EEZ: %s<br>EEZ part: %d<br>Buffer (1x): %d",
@@ -220,66 +314,160 @@ Extract average and area of overlap between zones and renewable energy potential
 
 units: wind speed (m/s) at 90m hub height
 
-```{r map_wind, eval=F}
+TODO:
+- [Visualise sf objects — ggsf • ggplot2](http://ggplot2.tidyverse.org/reference/ggsf.html)
+
+```{r mapWind, eval=F}
 wind = read_sf(wind_geo)
 
 wind %>% as('Spatial') %>%
-  spplot()
+  spplot(.[''])
 ```
 
 
-```{r tbl_wind}
+```{r tbl-wind}
 wind_cbls = read_csv(wind_cbls_csv)
 
-wind_cbls %>%
+wind_tbl = wind_cbls %>%
   select(-energy_num) %>%
   rename(`speed m/s`=energy_lbl) %>%
   mutate(
    pct_region         = pct_region/100,
    cable2_pct         = cable2_pct/100,
+   cable2_pct_region  = cable2_pct_region/100,
    cable3_pct         = cable3_pct/100,
-   cable3_pct_region  = cable3_pct_region/100) %>%
-  datatable() %>%
-  formatRound(
-    c('area_km2','cable2_km2','cable3_km2'), 
-    digits=2) %>% 
-  formatPercentage(
-    c('pct_region','cable2_pct','cable3_pct','cable3_pct_region'), 
-    digits=1)
+   cable3_pct_region  = cable3_pct_region/100) 
+
+wind_tbl_fmt = 
+  
+  wind_tbl %>%
+  mutate(
+   # pct_region         = percent(pct_region),
+   # cable2_pct         = percent(cable2_pct),
+   # cable2_pct_region  = percent(cable2_pct_region),
+   # cable3_pct         = percent(cable3_pct),
+   # cable3_pct_region  = percent(cable3_pct_region),
+   area_km2           = area_km2   %>% round(digits=1) %>% comma(),
+   cable2_km2         = cable2_km2 %>% round(digits=1) %>% comma(),
+   cable3_km2         = cable3_km2 %>% round(digits=1) %>% comma()) %>%
+  mutate(
+    `cable (km2)` = sprintf('%s - %s', cable2_km2, cable3_km2),
+    `cable (%)`   = sprintf('%0.2f - %0.2f%%', cable2_pct, cable3_pct)) %>%
+  select(region, `speed m/s`, `cable (km2)`, `cable (%)`, region_km2=area_km2)
+  # rename(
+  #   rgn = region,
+  #   rgn_km2      = area_km2,
+  #   pct_rgn      = pct_region,
+  #   cbl2_km2     = cable2_km2,
+  #   cbl2_pct     = cable2_pct,
+  #   cbl2_pct_rgn = cable2_pct_region,
+  #   cbl3_km2     = cable3_km2,
+  #   cbl3_pct     = cable3_pct,
+  #   cbl3_pct_rgn = cable3_pct_region) %>%
+  # select(rgn, `speed m/s`, rgn_km2, cbl2_km2, cbl2_pct, cbl2_pct_rgn, cbl3_km2, cbl3_pct, cbl3_pct_rgn)
+
+if (out_html){
+  wind_tbl %>%
+    datatable() %>%
+    formatCurrency(
+      c('area_km2','cable2_km2','cable3_km2'), 
+      currency = "", interval = 3, mark = ",", digits=1) %>%
+    #formatRound(
+    #  c('area_km2','cable2_km2','cable3_km2'),
+    #  digits=2) %>%
+    formatPercentage(
+      c('pct_region','cable2_pct','cable2_pct_region','cable3_pct','cable3_pct_region'),
+      digits=1)
+} else {
+  wind_tbl_fmt %>%
+    kable(
+      align=c('l', 'c', 'c', 'c', 'r'),
+      caption = 'Constraints of cable (minimum - recommended) categories of wind speed (m/s) at 90m hub height.') # , booktabs=T)
+}
 ```
 
 ### Wave
 
 units: wave energy flux (kW/m)
 
-```{r map_wave, eval=F}
+```{r map_wave, eval=T}
+#wave_lvls = unique(wave_cbls$energy_lbl)
+
 wave = read_sf(wave_geo)
 
-wave %>% as('Spatial') %>%
+wave %>% select(`kW/m` = energy_num) %>% as('Spatial') %>%
   spplot()
 ```
 
 
 ```{r tbl_wave}
-wave_cbls = read_csv(wave_cbls_csv)
-
-wave_cbls %>%
-  select(-energy_num) %>%
+# TODO: rm /100 from pct_* in *.R
+wave_cbls = read_csv(wave_cbls_csv) %>%
   rename(`flux kW/m`=energy_lbl) %>%
   mutate(
    pct_all        = pct_all/100,
    cable2_pct     = cable2_pct/100,
    cable3_pct     = cable3_pct/100,
-   cable3_pct_all = cable3_pct_all/100) %>%
+   cable3_pct_all = cable3_pct_all/100)
+
+wave_cbls %>%
+  select(-energy_num) %>%
   datatable() %>%
-  formatRound(
-    c('area_km2','cable2_km2','cable3_km2'), 
-    digits=2) %>% 
+  formatCurrency(
+      c('area_km2','cable2_km2','cable3_km2'), 
+      currency = "", interval = 3, mark = ",", digits=1) %>%
   formatPercentage(
-    c('pct_all','cable2_pct','cable3_pct','cable3_pct_all'), 
+    c('pct_all','cable2_pct','cable2_pct_all','cable3_pct','cable3_pct_all'),
     digits=1)
 ```
 
+- [plotly - stacked bar chart](https://plot.ly/r/bar-charts/#stacked-bar-chart)
+- [plotly - horizontal bar chart](https://plot.ly/r/horizontal-bar-charts/#colored-horizontal-bar-chart)
+- [plotly - percentages bar chart](https://plot.ly/ggplot2/geom_bar/#precentages)
+
+```{r plt_wave, eval=T}
+wave_cbls = read_csv(wave_cbls_csv)
+wave_lvls = unique(wave_cbls$energy_lbl)
+cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Remainder')
+wave_cbls = wave_cbls %>%
+  mutate(
+    min_2d = cable2_km2,
+    rec_3d = cable3_km2 - cable2_km2,
+    rem    = area_km2 - cable3_km2,
+    energy = factor(
+      energy_lbl, wave_lvls, wave_lvls, ordered=T)) %>%
+  select(
+    energy, min_2d, rec_3d, rem) %>%
+  gather(type, km2, -energy) %>%
+  mutate(
+    type = factor(
+      type,
+      names(cable_ord),
+     cable_ord, ordered=T)) %>%
+  arrange(energy, type)
+
+wave_pct = read_csv(wave_cbls_csv) %>%
+  mutate(
+    energy      = factor(energy_lbl, wave_lvls, wave_lvls, ordered=T),
+    pct_lbl_lvl = sprintf('%0.1f - %0.1f%%', cable2_pct, cable3_pct),
+    pct_lbl_all = sprintf('all: %0.1f - %0.1f%%', cable2_pct_all, cable3_pct_all)) %>%
+  select(energy, area_km2, pct_lbl_lvl, pct_lbl_all)
+#View(wave_pct)
+
+p = ggplot(wave_cbls, aes(x = energy, y = km2/1000, fill=type)) +
+  geom_col() +
+  geom_text(data=wave_pct, aes(label=pct_lbl_lvl, x=energy, y=area_km2/1000, fill=NULL), vjust = -.5) +
+  geom_text(data=wave_pct, aes(label=pct_lbl_all, x=energy, y=0, fill=NULL), vjust = -.5) +
+  labs(x='Wave energy (kW/m)', y='Area (1,000 km^2)', fill='Type') +
+  theme(legend.justification=c(1,1), legend.position=c(1,1))
+#p
+
+if (out_html){
+  ggplotly(p)
+} else {
+  print(p)
+}
+```
 
 ### Tidal
 
@@ -306,11 +494,11 @@ tide_cbls %>%
    cable3_pct     = cable3_pct/100,
    cable3_pct_all = cable3_pct_all/100) %>%
   datatable() %>%
-  formatRound(
-    c('area_km2','cable2_km2','cable3_km2'), 
-    digits=2) %>% 
+  formatCurrency(
+      c('area_km2','cable2_km2','cable3_km2'), 
+      currency = "", interval = 3, mark = ",", digits=1) %>%
   formatPercentage(
-    c('pct_all','cable2_pct','cable3_pct','cable3_pct_all'), 
+    c('pct_all','cable2_pct','cable2_pct_all','cable3_pct','cable3_pct_all'),
     digits=1)
 ```
 
@@ -332,7 +520,7 @@ Musial et al (2016):
 
 
 
-# Conclusions 
+# Conclusions
 
 ## Communication with Stakeholders
 
