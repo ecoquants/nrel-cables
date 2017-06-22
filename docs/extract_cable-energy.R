@@ -6,12 +6,40 @@ source('./packages_vars.R')
 
 # cables: read ----
 cbl2 = read_sf(dx2_geo) %>%
-  select(-buffer) %>% 
+  select(-buffer) %>%
   as('Spatial')
-cbl3 = read_sf(dx3_geo) %>% 
-  select(-buffer) %>% 
+cbl3 = read_sf(dx3_geo) %>%
+  select(-buffer) %>%
   as('Spatial')
 cbl_prj = st_crs(cbl2 %>% st_as_sf())$proj4string
+
+
+# [Marine Regions · Gulf of Mexico (IHO Sea Area)](http://www.marineregions.org/gazetteer.php?p=details&id=4288)
+gom_geo_url = 'http://geo.vliz.be/geoserver/wfs?request=getfeature&service=wfs&version=1.1.0&typename=MarineRegions:iho&outputformat=json&filter=%3CPropertyIsEqualTo%3E%3CPropertyName%3Eid%3C%2FPropertyName%3E%3CLiteral%3E26%3C%2FLiteral%3E%3C%2FPropertyIsEqualTo%3E'
+gom_kml = 'http://geo.vliz.be/geoserver/wms?request=GetMap&service=wms&version=1.1.1&srs=EPSG:4326&layers=MarineRegions:iho&width=800&height=376&bbox=-98.0539218184371,17.4068080184755,-80.4330407378397,31.464843750339&styles=gazetteer_red&Format=KML&filter=%3CPropertyIsEqualTo%3E%3CPropertyName%3Eid%3C%2FPropertyName%3E%3CLiteral%3E26%3C%2FLiteral%3E%3C%2FPropertyIsEqualTo%3E'
+
+tmp_geo = tempfile(fileext='.geojson')
+download.file(gom_geo_url, tmp_geo)
+gom_sf = read_sf(tmp_geo)
+gom = read_sf(gom_kml) %>% # st_cast('MULTIPOLYGON')
+  
+gom2 =  st_union(gom)
+
+plot(gom2)  
+  aggregate(gom['Name'], list(Name=Name), first)
+  #slice(1) %>%
+  
+
+
+gom = 
+
+names(gom)
+
+ggplot(gom2) +
+  geom_sf(fill='gray')
+# plot(gom['Name']) # SLOW!
+# TODO: http://r-spatial.org/r/2017/01/30/mapedit_intro.html
+
 
 # tide ----
 if (!file.exists(tide_geo)){
@@ -22,12 +50,12 @@ if (!file.exists(tide_geo)){
   # tide: read data ----
   if (!file.exists(tide_csv)){
     bind_rows(
-      read_sf(tide_shps[['East']]) %>% 
+      read_sf(tide_shps[['East']]) %>%
         as_tibble() %>%
         select(lon=LONGIT, lat=LATITU, pwr_wm2=MEANPO) %>%
         mutate(
           region = 'East'),
-      read_sf(tide_shps[['West']]) %>% 
+      read_sf(tide_shps[['West']]) %>%
         as_tibble() %>%
         select(lon=LONGIT, lat=LATITU, pwr_wm2=MEANPO) %>%
         mutate(
@@ -50,18 +78,18 @@ if (!file.exists(tide_geo)){
     
     pts = subset(tp, region==rgn)
     rgn_r[[rgn]] = rasterize(
-      pts, 
-      raster(crs=cbl_prj, ext=extent(pts), resolution=0.01), 
+      pts,
+      raster(crs=cbl_prj, ext=extent(pts), resolution=0.01),
       field='pwr_wm2', fun=mean)
-
+    
     s = stack(r, area(r))
     names(s) = c('pwr_wm2', 'area_km2')
-
+    
     rgn_v[[rgn]] = getValues(s) %>% as_tibble() %>%
       filter(!is.na(pwr_wm2)) %>%
       mutate(
         region = rgn)
-
+    
     rgn_c[[rgn]] = bind_rows(
       extract(s, cbl2, df=T) %>%
         mutate(
@@ -78,7 +106,7 @@ if (!file.exists(tide_geo)){
   # tide: merge rasters & save as tif
   r_all = merge(rgn_r[['East']], rgn_r[['West']], tolerance=0.2)
   writeRaster(r_all, tide_tif)
-
+  
   # tide: summarize table by region, energy breaks
   brks = c(0,500,1000,1500,10753)
   
@@ -105,7 +133,7 @@ if (!file.exists(tide_geo)){
   tide_cbls = d_r %>%
     left_join(d_c, by=c('region','energy_cat')) %>%
     replace_na(list(
-      cable2_km2 = 0, 
+      cable2_km2 = 0,
       cable3_km2 = 0)) %>%
     mutate(
       cable2_pct     = cable2_km2 / area_km2 * 100,
@@ -117,10 +145,10 @@ if (!file.exists(tide_geo)){
       energy_lbl = factor(energy_cat, levels(energy_cat), labels=c(sprintf('%d-%d', brks[1:3], brks[2:4]), '>1500')),
       energy_num = factor(energy_cat, levels(energy_cat), labels=brks[1:4]) %>% as.character() %>% as.integer()) %>%
     select(
-      region, energy_num, energy_lbl, area_km2, pct_all, 
+      region, energy_num, energy_lbl, area_km2, pct_all,
       cable2_km2, cable2_pct, cable2_pct_all, cable3_km2, cable3_pct, cable3_pct_all) %>%
     arrange(region, energy_num)
- 
+  
   tide_cbls %>% write_csv(tide_cbls_csv)
 }
 
@@ -142,7 +170,7 @@ if (!file.exists(wave_geo)){
   
   # calculate area
   wave$area_km2 = areaPolygon(wave) / (1000*1000)
-
+  
   # write to geojson
   wave %>% st_as_sf() %>% write_sf(wave_geo)
 }
@@ -174,10 +202,10 @@ if (!file.exists(wave_cbls_csv)){
       wave_cbl3@data,
       by=c('energy_lbl','energy_num')) %>%
     left_join(
-      wave_cbl2@data, 
+      wave_cbl2@data,
       by=c('energy_lbl','energy_num')) %>%
     replace_na(list(
-      cable2_km2 = 0, 
+      cable2_km2 = 0,
       cable3_km2 = 0)) %>%
     mutate(
       cable2_pct     = cable2_km2 / area_km2 * 100,
@@ -186,7 +214,7 @@ if (!file.exists(wave_cbls_csv)){
       cable2_pct_all = cable2_km2 / sum(area_km2) * 100,
       cable3_pct_all = cable3_km2 / sum(area_km2) * 100) %>%
     select(
-      energy_num, energy_lbl, area_km2, pct_all, 
+      energy_num, energy_lbl, area_km2, pct_all,
       cable2_km2, cable2_pct, cable2_pct_all, cable3_km2, cable3_pct, cable3_pct_all) %>%
     arrange(energy_num)
   
@@ -203,7 +231,7 @@ if (!file.exists(wind_geo)){
     cat(sprintf('%s - %s\n', lbl, shp))
     
     # read in vector
-    v = read_sf(shp) %>% 
+    v = read_sf(shp) %>%
       mutate(region = lbl) %>%
       as('Spatial')
     
@@ -263,10 +291,10 @@ if (!file.exists(wind_cbls_csv)){
       wind_cbl3@data,
       by=c('region','energy_lbl','energy_num')) %>%
     left_join(
-      wind_cbl2@data, 
+      wind_cbl2@data,
       by=c('region','energy_lbl','energy_num')) %>%
     replace_na(list(
-      cable2_km2 = 0, 
+      cable2_km2 = 0,
       cable3_km2 = 0)) %>%
     mutate(
       cable2_pct = cable2_km2 / area_km2 * 100,
@@ -278,7 +306,7 @@ if (!file.exists(wind_cbls_csv)){
       cable3_pct_region = cable3_km2 / sum(area_km2) * 100) %>%
     ungroup() %>%
     select(
-      region, energy_num, energy_lbl, area_km2, pct_region, 
+      region, energy_num, energy_lbl, area_km2, pct_region,
       cable2_km2, cable2_pct, cable2_pct_region, cable3_km2, cable3_pct, cable3_pct_region) %>%
     arrange(region, energy_num)
   

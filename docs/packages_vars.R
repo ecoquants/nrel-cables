@@ -5,12 +5,15 @@ packages = c(
   # dynamic document creation
   'knitr','rmarkdown','bookdown','DT', 
   # plotting & mapping
-  'RColorBrewer','leaflet', 
+  #'RColorBrewer','ggplot2','plotly','leaflet', 
+  'RColorBrewer','viridis','scales','ggplot2','ropensci/plotly','maps','albersusa','mapproj','wch/webshot', # ,'leaflet'
+  # [mapedit](ttp://r-spatial.org/r/2017/01/30/mapedit_intro.html)
+  'bhaskarvk/leaflet', 'bhaskarvk/leaflet.extras', 'r-spatial/mapview@develop', 'r-spatial/mapedit',
   # spatial analytical
-  'rgdal','raster','ncdf4','rgeos','geosphere','edzer/sfr','eblondel/cleangeo','geojsonio','maptools') 
-for (pkg in packages){ # pkg= packages[1] # pkg = 'edzer/sfr'
+  'sp','rgdal','raster','ncdf4','rgeos','geosphere','edzer/sfr','eblondel/cleangeo','geojsonio','maptools','hrbrmstr/albersusa') 
+for (pkg in packages){ # pkg= packages[1] # pkg = 'r-spatial/mapview@develop' # pkg='ropensci/plotly'
   github_pkg = grepl('/', pkg)
-  p = ifelse(github_pkg, sub('(.*)/(.*)', '\\2', pkg), pkg)
+  p = ifelse(github_pkg, sub('([-0-9A-Za-z]*)/([-0-9A-Za-z]*)@?([-0-9A-Za-z]*)', '\\2', pkg), pkg)
   if (pkg == 'edzer/sfr') p = 'sf' # installed MacOS dependencies: https://github.com/edzer/sfr#macos
   if (!require(p, character.only=T)){
     if (github_pkg){
@@ -28,6 +31,7 @@ select = dplyr::select
 # variables & paths ----
 d_incr = 100 # depth increment
 redo = F
+crs_gcs = leaflet:::epsg4326
 
 # create_cable-buffer.R paths ----
 gdb           = '../data/SubmarineCables/NOAAChartedSubmarineCables.gdb'
@@ -38,8 +42,11 @@ lns_usa_geo   = '../data/lns_usa.geojson'
 eez_shp       = '~/mbon_data_big/technical/boundaries/eez/eez.shp'
 usa_geo       = '../data/eez_usa.geojson'
 lns_d1x_geo   = '../data/lns_d1x.geojson'
-dx2_geo       = sprintf('../data/buf_2xdepth-incr%sm.geojson', d_incr)
-dx3_geo       = sprintf('../data/buf_3xdepth-incr%sm.geojson', d_incr)
+dx2_geo       = sprintf('../data/buf_2xdepth_incr%sm.geojson', d_incr)
+dx3_geo       = sprintf('../data/buf_3xdepth_incr%sm.geojson', d_incr)
+dx2_kml       = '../data/buf_2xdepth_incr100m.kml'
+dx3_kml       = '../data/buf_3xdepth_incr100m.kml'
+lns_d1x_kml   = '../data/lns_d1x.kml'
 
 # extract_cable-energy.R paths ----
 # wind

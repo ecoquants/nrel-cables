@@ -1,8 +1,68 @@
+# TODO: next steps
+
 # working directory
 if (basename(getwd()) == 'nrel-cables') setwd('docs')
 
 # load packages and variables ----
 source('./packages_vars.R')
+redo = T
+
+clean_geo = function(geo, sfx='dirty', mv_dirty=T){
+  # clean up geometry
+  # inputs:
+  # - geo: geometry file like geojson, readable by read_sf()
+  # output:
+  # - geo_clean.geojson
+  # - geo_clean_issues-before.csv
+  # - geo_clean_issues-after.csv
+  # geo = '../tmp/ply_dx2_13_gcs.geojson'; sfx='dirty'; mv_dirty=T
+  v = read_sf(geo) %>% as('Spatial')
+  issues <- clgeo_CollectionReport(v) %>% .[.$valid==F,]
+  if (nrow(issues)>0){
+    cat(sprintf('  %d issue(s) before %s...\n', nrow(issues), sfx))
+    print(issues)
+    write_csv(issues, sprintf('%s_%s-issues-before.csv', tools::file_path_sans_ext(geo), sfx))
+    
+    if (mv_dirty){
+      geo_dirty = sprintf('%s_%s.geojson', tools::file_path_sans_ext(geo), sfx)
+      file.rename(geo, geo_dirty)
+      geo_clean = geo
+    } else {
+      geo_clean = sprintf('%s_%s.geojson', tools::file_path_sans_ext(geo), sfx)
+    }
+    
+    v2 = clgeo_Clean(v, strategy = 'BUFFER')
+    v2 %>% st_as_sf() %>% write_sf(geo_clean)
+    
+    issues <- clgeo_CollectionReport(v2) %>% .[.$valid==F,]
+    if (nrow(issues)>0){
+      cat(sprintf('  %d issue(s) after %s...\n', nrow(issues), sfx))
+      print(issues)
+      write_csv(issues, sprintf('%s_%s-issues-after.csv', tools::file_path_sans_ext(geo), sfx))
+    } else {
+      cat('  issues FIXED\n')
+    }
+  }
+}
+
+# dissolve
+dissolve1 = function(x, crs_str){
+  x %>% st_as_sf() %>% mutate(one=1) %>% as('Spatial') %>%
+    gUnaryUnion() %>% 
+    SpatialPolygonsDataFrame(data_frame(one=1)) %>% 
+    st_as_sf() %>% st_set_crs(crs_str)
+}
+
+# merge
+merge2 = function(x, y, drop_cols_except_one=T){
+  raster::union(
+    x %>% st_as_sf() %>% mutate(one=1) %>% as('Spatial'), 
+    y %>% st_as_sf() %>% mutate(one=1) %>% as('Spatial')) %>%
+    st_as_sf() %>%
+    select(geometry) %>%
+    mutate(
+      one=1)
+}
 
 # read cables ----
 if (!file.exists(lns_geo)){
@@ -116,69 +176,225 @@ if (!file.exists(lns_d1x_geo)){
   lns_d1x = read_sf(lns_d1x_geo)
 }
 
-clean_geo = function(geo, sfx='dirty', mv_dirty=T){
-  # clean up geometry
-  # inputs:
-  # - geo: geometry file like geojson, readable by read_sf()
-  # output:
-  # - geo_clean.geojson
-  # - geo_clean_issues-before.csv
-  # - geo_clean_issues-after.csv
-  # geo = '../tmp/ply_dx2_13_gcs.geojson'; sfx='dirty'; mv_dirty=T
-  v = read_sf(geo) %>% as('Spatial')
-  issues <- clgeo_CollectionReport(v) %>% .[.$valid==F,]
-  if (nrow(issues)>0){
-    cat(sprintf('  %d issue(s) before %s...\n', nrow(issues), sfx))
-    print(issues)
-    write_csv(issues, sprintf('%s_%s-issues-before.csv', tools::file_path_sans_ext(geo), sfx))
-    
-    if (mv_dirty){
-      geo_dirty = sprintf('%s_%s.geojson', tools::file_path_sans_ext(geo), sfx)
-      file.rename(geo, geo_dirty)
-      geo_clean = geo
-    } else {
-      geo_clean = sprintf('%s_%s.geojson', tools::file_path_sans_ext(geo), sfx)
-    }
-    
-    v2 = clgeo_Clean(v, strategy = 'BUFFER')
-    v2 %>% st_as_sf() %>% write_sf(geo_clean)
-    
-    issues <- clgeo_CollectionReport(v2) %>% .[.$valid==F,]
-    if (nrow(issues)>0){
-      cat(sprintf('  %d issue(s) after %s...\n', nrow(issues), sfx))
-      print(issues)
-      write_csv(issues, sprintf('%s_%s-issues-after.csv', tools::file_path_sans_ext(geo), sfx))
-    } else {
-      cat('  issues FIXED\n')
-    }
-  }
+# aggregate 5:22pm
+usa0_geo = '../tmp/usa0.geojson'
+if (!file.exists(usa0_geo)){
+
+  # [Tidy spatial data in R: using dplyr, tidyr, and ggplot2 with sf](http://strimas.com/r/tidy-sf/)
+
+  usa0 = read_sf(eez_shp) %>% 
+    filter(
+      Sovereign1 == 'United States',
+      Territory1 %in% unique(lns_d1x$Territory1))
+
+  usa0_sp = usa0 %>% as('Spatial')
+  #usa %>% as.data.frame() %>% select(-geometry) %>% View()
+  if (!gIsValid(usa0_sp)) usa0_sp = clgeo_Clean(usa0_sp, strategy='BUFFER')
+  # Ring Self-intersection at or near point -72.026275780000006 41.263013059999999
+  usa0_sp %>% st_as_sf() %>% write_sf(usa0_geo)
+} else {
+  usa0 = read_sf(usa0_geo)
 }
+# TODO: ?editFeatures leaflet w/ albersusa in 
+
+
+# %>% # usa parts with  
+#   mutate(
+#     territory = Territory1,
+#     territory = ifelse(part==19, 'US West', territory),
+#     territory = ifelse(part==18, 'US East', territory)) %>%
+#   group_by(territory) %>%
+#   summarise(
+#     n_parts = n()) %>%
+#   as('Spatial') %>%
+#   clgeo_Clean(strategy = 'BUFFER') %>%
+#   st_as_sf()
+# 
+# clgeo_CollectionReport(usa_cbl %>% as('Spatial')) %>% .[.$valid==F,]
+# usa_cbl = clgeo_Clean(usa_cbl, strategy = 'BUFFER')
+
+# [Marine Regions · Gulf of Mexico (IHO Sea Area)](http://www.marineregions.org/gazetteer.php?p=details&id=4288)
+gom_shp_url = 'http://geo.vliz.be/geoserver/wfs?request=getfeature&service=wfs&version=1.0.0&typename=MarineRegions:iho&outputformat=SHAPE-ZIP&filter=%3CPropertyIsEqualTo%3E%3CPropertyName%3Eid%3C%2FPropertyName%3E%3CLiteral%3E26%3C%2FLiteral%3E%3C%2FPropertyIsEqualTo%3E'
+tmp_zip = tempfile(fileext='.zip')
+download.file(gom_shp_url, tmp_zip)
+tmp_dir = tempdir()
+unzip(tmp_zip, exdir=tmp_dir) # list.files(tmp_dir)
+gom = read_sf(file.path(tmp_dir, 'iho.shp'))
+gom_sp = gom %>% as('Spatial')
+gIsValid(gom_sp)
+
+# clgeo_CollectionReport(gom %>% as('Spatial')) %>% .[.$valid==F,]
+# gom = clgeo_Clean(gom, strategy = 'BUFFER')
+
+east_notgom_geo = '../tmp/east_notgom_sp.geojson'
+
+east = usa %>% filter(part==18)
+east_sp = east %>% as('Spatial')
+if (!gIsValid(east_sp)) east_sp = clgeo_Clean(east_sp, strategy='BUFFER')
+
+east_notgom_ply = gDifference(east_sp, gom_sp)
+
+east_notgom_sp = SpatialPolygonsDataFrame(
+  Sr          = east_notgom_ply,
+  data        = data_frame(id=1))
+
+
+east_notgom_sp %>%
+  st_as_sf() %>%
+  write_sf(east_notgom_geo)
+
+east_notgom = read_sf(east_notgom_geo)
+# [mapedit](http://r-spatial.org/r/2017/01/30/mapedit_intro.html)
+
+east_notgom_parts = east_notgom %>%
+  st_cast('POLYGON') %>%
+  mutate(
+    part    = row_number(),
+    area    = st_area(geometry),
+    ctr_lon = st_centroid(geometry) %>% st_coordinates() %>% .[,1])
+
+gom_extra = east_notgom_parts %>% filter(ctr_lon < -83)
+gom_extra_sp = gom_extra %>% as('Spatial')
+
+gom_plus_geo = '../tmp/gom_plus.geojson'
+gom_plus = merge2(gom_sp, gom_extra_sp)
+gom_plus_d = dissolve1(gom_plus, crs_gcs)
+gIsValid(gom_plus %>% as('Spatial'))
+write_sf(gom_plus_d, gom_plus_geo, delete_dsn=T)
+gom_plus = read_sf(gom_plus_geo)
+
+east_notgom2_geo = '../tmp/east_notgom2.geojson'
+east_notgom2 = east_notgom_parts %>% 
+  filter(ctr_lon >= -83) %>%
+  dissolve1(crs_gcs)
+write_sf(east_notgom2, east_notgom2_geo, delete_dsn=T)
+east_notgom2 = read_sf(east_notgom2_geo)
+
+#mapview(east_notgom2)
+#mapview(gom_plus)
+#mapview(usa %>% filter(part==19))
+
+# # old
+# ply %>%
+# as('Spatial') %>%
+#   SpatialPolygonsDataFrame(
+#     Sr          = gUnaryUnion(., id=.$Territory1),
+#     data        = data_frame(ID=.$Territory1), match.ID=T)
+
+# usa_rgn_0 = usa_rgn
+usa_rgn_sp = usa %>% 
+  # Contiguous US West
+  filter(part==19) %>%
+  mutate(
+    territory = 'West') %>%
+  select(territory) %>%
+  as('Spatial') %>%
+  raster::union(
+    # Gulf of Mexico
+    gom_plus %>%
+      mutate(
+        territory = 'Gulf of Mexico') %>%
+      select(territory) %>%
+      as('Spatial')) %>%
+  raster::union(
+    # Contiguous US East, except Gulf of Mexico
+    east_notgom2 %>%
+      mutate(
+        territory = 'East') %>%
+      select(territory) %>%
+      as('Spatial')) %>%
+  raster::union(
+    # remaining US territories overlapping with cables
+    usa0 %>%
+      select(territory = Territory1) %>%
+      filter(territory != 'United States') %>%
+      as('Spatial'))
+  # SLOW
+# Too few points in geometry component at or near point -81.708715389999995 24.57471949
+
+if (!gIsValid(usa_rgn_sp)) usa_rgn_sp = clgeo_Clean(usa_rgn_sp, strategy='BUFFER')
+
+#usa_rgn_sp = usa_rgn
+usa_rgn = usa_rgn_sp %>% st_as_sf()
+usa_rgn = usa_rgn %>%
+  mutate(
+    territory = ifelse(
+      !is.na(territory), 
+      territory,
+      ifelse(
+        !is.na(territory.1),
+        territory.1,
+        ifelse(
+          !is.na(territory.2),
+          territory.2,
+          NA))) %>%
+      recode(
+        'United States Virgin Islands'='US Virgin Islands',
+        'Northern Mariana Islands'='N Mariana Islands')) %>%
+  select(territory)
+
+
+# merge Puerto
+usa_nopr = usa_rgn %>%
+  filter(territory!='Puerto Rico') %>%
+  as('Spatial')
+usa_pr = usa_rgn %>%
+  filter(territory=='Puerto Rico') %>%
+  as('Spatial') %>%
+  dissolve1(crs_gcs) %>%
+  as('Spatial')
+usa_rgn2 = raster::union(usa_nopr, usa_pr) %>%
+  st_as_sf() %>%
+  mutate(
+    territory = ifelse(is.na(territory), 'Puerto Rico', territory)) %>%
+  select(territory) %>%
+  arrange(territory)
+gIsValid(usa_rgn2 %>% as('Spatial'))
+
+usa_rgn_geo = '../data/usa_rgn.geojson'
+write_sf(usa_rgn2, usa_rgn_geo, delete_dsn=T)
+usa_rgn = read_sf(usa_rgn_geo)
+
+usa_rgn2
+plot(usa_rgn2['territory'])
+#mapview(usa_rgn, zcol='territory')
 
 if (exists('ply_dx2')) rm(ply_dx2)
 # file.remove(dx2_rds); file.remove(dx3_rds)
 
 # generate if needed
-if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
+if(any(!file.exists(dx2_geo), !file.exists(dx3_geo), redo)){
   
   lns_d1x = read_sf('../data/lns_d1x.geojson')
   
   # iterate over usa eez parts ----
-  parts = unique(lns_d1x$part)
-  for (i in 1:length(parts)){ # i = 1
+  #parts = unique(lns_d1x$part) # DEBUG
+  parts = usa %>% 
+    filter(
+      part %in% unique(lns_d1x$part),
+      !Territory1 %in% c('Hawaii','Alaska')) %>% 
+    .$part
+  # usa %>% filter(part==p) %>% .$Territory1
+  for (i in 1:length(parts)){ # p=18; i=which(parts==p)
     #for (i in 25:nrow(tiles_sf)){ # i = 25  # TODO DEBUG
     p = parts[i]
     p_name = lns_d1x %>% filter(part == p) %>% head(1) %>% .$GeoName
     
-    ply_dx2_i_geo = sprintf('../tmp/ply_dx2_i%02d.geojson',i)
-    ply_dx3_i_geo = sprintf('../tmp/ply_dx3_i%02d.geojson',i)
+    ply_dx2_p_geo = sprintf('../tmp/ply_dx2_p%02d.geojson',p)
+    ply_dx3_p_geo = sprintf('../tmp/ply_dx3_p%02d.geojson',p)
     
-    if (any(!file.exists(ply_dx2_i_geo), !file.exists(ply_dx3_i_geo), redo)){
+    #ply_dx2_p = read_sf(ply_dx2_p_geo)
+    #mapview(ply_dx2_p)
+    if (any(!file.exists(ply_dx2_p_geo), !file.exists(ply_dx3_p_geo), redo)){
       
-      cat(sprintf('%02d: part #%02d %s -- %s\n', i, p, p_name, Sys.time()))
+      cat(sprintf('%02d of %d: part #%02d %s -- %s\n', i, length(parts), p, p_name, Sys.time()))
       
       # setup extent & project to Albers for buffering in meters
       lns_i = lns_d1x %>% 
         filter(part == p)
+      # lns_i_geo = sprintf('../tmp/lns_p%2d.geojson', p)
+      # write_sf(lns_i, lns_i_geo)
+      # clean_geo(lns_i_geo)
       
       cat(sprintf('  project to Albers -- %s\n', Sys.time()))
       bb = st_bbox(lns_i)
@@ -187,6 +403,26 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
         "+proj=aea +lat_1=%f +lat_2=%f +lat_0=%f +lon_0=%f +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs",
         lat_range[1], lat_range[2], mean(lat_range), mean(bb[c('xmin','xmax')]))
       lns_a = st_transform(lns_i, crs_aea)
+      
+      # dx2 = read_sf(dx2_geo) 
+      # dx3 = read_sf(dx3_geo) 
+      # badbuf = mapview(list(dx2, lns_d1x)) %>%
+      #   editMap()
+      # plot(badbuf$finished['X_leaflet_id'])
+      # plot(badbuf2$finished['X_leaflet_id'])
+      # gomex_badbox = badbuf$finished %>%
+      #    slice(1)
+      # gomex_badbox_geo = '../tmp/gomex_badbox.geojson'
+      # # write_sf(gomex_badbox, gomex_badbox_geo)
+      # gomex_badbox = read_sf(gomex_badbox_geo)
+      # badboxes = gomex_badbox
+      # badboxes_a = st_transform(badboxes, crs_aea)
+      # badboxes_a_sp = badboxes_a %>% as('Spatial')
+      #
+      # #plot(gomex_badbox)
+      # badbuf2 = mapview(list(dx2, lns_d1x), maxpoints=2e6) %>%
+      #   editMap()
+      # mapview(list(dx3, dx2, lns_d1x, gomex_test$finished))
       
       # iterate over buffer depths
       bufs = lns_a %>%
@@ -198,81 +434,109 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
         cat(sprintf('  %03d of %d bufs: %d m -- %s\n', j, nrow(bufs), b, Sys.time()))
         
         lns_b = lns_a %>% filter(buf1x==b)
+        lns_b_sp = lns_b %>% as('Spatial') # plot(lns_b_sf['part'])
         
         # buffer ----
-        buf_dx2 = gBuffer(lns_b %>% as('Spatial'), width=b*2)  
-        buf_dx3 = gBuffer(lns_b %>% as('Spatial'), width=b*3)  
+        buf_dx2 = gBuffer(lns_b_sp, width=b*2)  
+        buf_dx3 = gBuffer(lns_b_sp, width=b*3)  
+        
+        # # check if bad buffer before union
+        # buf_x_bad = rgeos::gIntersects(buf_dx2, badboxes_a_sp)
+        # cat(sprintf('    before union\n', length(buf_x_bad)))
+        # if (buf_x_bad) browser()
         
         if (j == 1){
-          ply_dx2_i = buf_dx2
-          ply_dx3_i = buf_dx3
+          ply_dx2_p = buf_dx2
+          ply_dx3_p = buf_dx3
         } else {
-          ply_dx2_i = raster::union(ply_dx2_i, buf_dx2)
-          ply_dx3_i = raster::union(ply_dx3_i, buf_dx3)
+          ply_dx2_p = merge2(ply_dx2_p, buf_dx2)
+          ply_dx3_p = merge2(ply_dx3_p, buf_dx3)
         }
+        
+        # # check if bad buffer after union
+        # buf_x_bad = rgeos::gIntersects(ply_dx2_p, badboxes_a_sp)
+        # cat(sprintf('    after union\n', length(buf_x_bad)))
+        # if (buf_x_bad) browser()
+        #ply_dx2_p_0 = ply_dx2_p # ply_dx2_p = ply_dx2_p_0
+        #ply_dx3_p_0 = ply_dx3_p # ply_dx3_p = ply_dx3_p_0
+        # plot(ply_dx2_p); plot(ply_dx3_p)
+        
       }
       
-      # dissolve
-      ply_dx2_i = gUnaryUnion(ply_dx2_i)
-      ply_dx3_i = gUnaryUnion(ply_dx3_i)
+      ply_dx2_p = dissolve1(ply_dx2_p, crs_aea)
+      ply_dx3_p = dissolve1(ply_dx3_p, crs_aea)
+      # plot(ply_dx2_p); plot(ply_dx3_p)
       
       # write temp geo
-      st_write(ply_dx2_i %>% st_as_sf(), ply_dx2_i_geo, quiet=T)
-      st_write(ply_dx3_i %>% st_as_sf(), ply_dx3_i_geo, quiet=T)
+      st_write(ply_dx2_p, ply_dx2_p_geo, quiet=T, delete_dsn=T)
+      st_write(ply_dx3_p, ply_dx3_p_geo, quiet=T, delete_dsn=T)
     } else {
-      ply_dx2_i = st_read(ply_dx2_i_geo, quiet=T) %>% as('Spatial')
-      ply_dx3_i = st_read(ply_dx3_i_geo, quiet=T) %>% as('Spatial')
+      ply_dx2_p = st_read(ply_dx2_p_geo, quiet=T, crs=crs_aea)
+      ply_dx3_p = st_read(ply_dx3_p_geo, quiet=T, crs=crs_aea)
+      # plot(ply_dx2_p); plot(ply_dx3_p)
     }
     
-    ply_dx2_i_gcs_geo = sprintf('../tmp/ply_dx2_%02d_gcs.geojson',i)
-    ply_dx3_i_gcs_geo = sprintf('../tmp/ply_dx3_%02d_gcs.geojson',i)
-     
-    if (any(!file.exists(ply_dx2_i_gcs_geo), !file.exists(ply_dx3_i_gcs_geo))){
+    ply_dx2_p_gcs_geo = sprintf('../tmp/ply_dx2_p%02d_gcs.geojson',p)
+    ply_dx3_p_gcs_geo = sprintf('../tmp/ply_dx3_p%02d_gcs.geojson',p)
     
-      cat(sprintf('  projecting to GCS geometry & projecting -- %s\n', Sys.time()))
-      ply_dx2_i_gcs = st_transform(ply_dx2_i %>% st_as_sf(), leaflet:::epsg4326) %>% mutate(buffer='2*depth')
-      ply_dx3_i_gcs = st_transform(ply_dx3_i %>% st_as_sf(), leaflet:::epsg4326) %>% mutate(buffer='3*depth')
+    if (any(!file.exists(ply_dx2_p_gcs_geo), !file.exists(ply_dx3_p_gcs_geo), redo)){
       
-      st_write(ply_dx2_i_gcs, ply_dx2_i_gcs_geo, quiet=T)
-      st_write(ply_dx3_i_gcs, ply_dx3_i_gcs_geo, quiet=T)
+      cat(sprintf('  projecting to gcs, ie geographic coordinate system as lon/lat in WGS84 -- %s\n', Sys.time()))
+      ply_dx2_p_gcs = st_transform(ply_dx2_p, crs_gcs) %>% mutate(buffer='2*depth')
+      ply_dx3_p_gcs = st_transform(ply_dx3_p, crs_gcs) %>% mutate(buffer='3*depth')
+      
+      st_write(ply_dx2_p_gcs, ply_dx2_p_gcs_geo, quiet=T, delete_dsn=T)
+      st_write(ply_dx3_p_gcs, ply_dx3_p_gcs_geo, quiet=T, delete_dsn=T)
       
     }
-    ply_dx2_i_gcs = st_read(ply_dx2_i_gcs_geo, quiet=T) %>% as('Spatial') # %>% mutate(id=1)
-    ply_dx3_i_gcs = st_read(ply_dx3_i_gcs_geo, quiet=T) %>% as('Spatial')
+    ply_dx2_p_gcs = st_read(ply_dx2_p_gcs_geo, quiet=T, crs=crs_gcs) %>% select(-one)
+    ply_dx3_p_gcs = st_read(ply_dx3_p_gcs_geo, quiet=T, crs=crs_gcs) %>% select(-one)
+    # plot(ply_dx2_p_gcs); plot(ply_dx3_p_gcs)
     
     # merge cable buffers by eez parts ----
     cat(sprintf('  union part %02d -- %s\n', i, Sys.time()))
     if (!exists('ply_dx2')){
-      ply_dx2 = ply_dx2_i_gcs
-      ply_dx3 = ply_dx3_i_gcs
+      ply_dx2 = ply_dx2_p_gcs
+      ply_dx3 = ply_dx3_p_gcs
     } else {
-      ply_dx2 = gUnion(ply_dx2, ply_dx2_i_gcs)
-      ply_dx3 = gUnion(ply_dx3, ply_dx3_i_gcs)
+      # i=8; p=15; clgeo_CollectionReport(ply_dx2_p_gcs) %>% .[.$valid==F,]
+      # usa %>% filter(part==p) %>% .$Territory1
+      #ply_dx2_p_gcs = dissolve1(ply_dx2_p_gcs, crs_gcs)
+      #ply_dx2 = dissolve1(ply_dx2, crs_gcs)
+      
+      ply_dx2 = merge2(ply_dx2, ply_dx2_p_gcs)
+      ply_dx3 = merge2(ply_dx3, ply_dx3_p_gcs)
     }
-
+    
   } # finish iterating over parts
-
+  
   # dissolve all
   cat(sprintf('union all -- %s\n', Sys.time()))
-  ply_dx2 = gUnaryUnion(ply_dx2)
-  ply_dx3 = gUnaryUnion(ply_dx3)
-
-  # clip and identify eez
-  cat(sprintf('intersect all with eez -- %s\n', Sys.time()))
-  # add data frame
-  ply_dx2 = SpatialPolygonsDataFrame(ply_dx2, data_frame(buffer='depth*2'))
-  ply_dx3 = SpatialPolygonsDataFrame(ply_dx3, data_frame(buffer='depth*3'))
+  ply_dx2 = dissolve1(ply_dx2, crs_gcs)
+  # FIX!
+  ply_dx3 = clgeo_Clean(ply_dx3 %>% as('Spatial'), strategy = 'BUFFER')
+  ply_dx3 = dissolve1(ply_dx3, crs_gcs)
   
-  # intersect with USA EEZ ----
-  usa_sp = usa %>% select(eez=GeoName, eez_part=part) %>% as('Spatial')
-  system.time({
-    ply_dx2 = raster::intersect(ply_dx2, usa_sp)
-    ply_dx3 = raster::intersect(ply_dx3, usa_sp)
-  }) # 26 min
+  #
+  #Error in gUnaryUnion(.) : 
+  #  TopologyException: Input geom 1 is invalid: Self-intersection at or near point -124.97150226260101 38.159075210133764
+  
+  # # clip and identify eez
+  # cat(sprintf('intersect all with eez -- %s\n', Sys.time()))
+  # # add data frame
+  # ply_dx2 = SpatialPolygonsDataFrame(ply_dx2, data_frame(buffer='depth*2'))
+  # ply_dx3 = SpatialPolygonsDataFrame(ply_dx3, data_frame(buffer='depth*3'))
+  # 
+  # # intersect with USA EEZ ----
+  # usa_sp = usa %>% select(eez=GeoName, eez_part=part) %>% as('Spatial')
+  # system.time({
+  #   ply_dx2 = raster::intersect(ply_dx2, usa_sp)
+  #   ply_dx3 = raster::intersect(ply_dx3, usa_sp)
+  # }) # 26 min
   
   cat(sprintf('write all -- %s\n', Sys.time()))
-  ply_dx2 %>% st_as_sf() %>% write_sf(dx2_geo, quiet=T)
-  ply_dx3 %>% st_as_sf() %>% write_sf(dx3_geo, quiet=T)
+  ply_dx2 %>% write_sf(dx2_geo, quiet=T, delete_dsn=T)
+  ply_dx3 %>% write_sf(dx3_geo, quiet=T, delete_dsn=T)
   
   cat(sprintf('clean all -- %s\n', Sys.time()))
   clean_geo(dx2_geo)
@@ -283,7 +547,19 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo))){
 cat(sprintf('FINISHED -- %s\n', Sys.time()))
 
 # Google Earth sanity check with measurement tool ----
-read_sf(dx2_geo) %>% write_sf('../data/buf_2xdepth-incr100m.kml')
-read_sf(dx3_geo) %>% write_sf('../data/buf_3xdepth-incr100m.kml')
+file.remove(dx2_kml, dx3_kml, lns_d1x_kml)
+read_sf(dx2_geo) %>% write_sf(dx2_kml, delete_dsn=T)
+read_sf(dx3_geo) %>% write_sf(dx3_kml, delete_dsn=T)
 #file.remove('../data/lns_d1x.kml')
-read_sf(lns_d1x_geo) %>% select(buf1x, part, GeoName) %>% write_sf('../data/lns_d1x.kml')
+read_sf(lns_d1x_geo) %>% select(buf1x, part, GeoName) %>% write_sf(lns_d1x_kml, delete_dsn=T)
+
+# fix GoMex horizontal
+# dx2 = read_sf(dx2_geo) 
+# gomex_bbox = mapview(dx2) %>%
+#   editMap()
+# 
+# lns_d1x = read_sf('../data/lns_d1x.geojson')
+# gomex_lns = mapview(lns_d1x) %>%
+#   editMap()
+# 
+# lns_d1x

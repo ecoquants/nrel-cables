@@ -351,9 +351,9 @@ wind_tbl_fmt =
    cable2_km2         = cable2_km2 %>% round(digits=1) %>% comma(),
    cable3_km2         = cable3_km2 %>% round(digits=1) %>% comma()) %>%
   mutate(
-    `cable (km2)` = sprintf('%s - %s', cable2_km2, cable3_km2),
-    `cable (%)`   = sprintf('%0.2f - %0.2f%%', cable2_pct, cable3_pct)) %>%
-  select(region, `speed m/s`, `cable (km2)`, `cable (%)`, region_km2=area_km2)
+    `Cable (km^2)` = sprintf('%s - %s', cable2_km2, cable3_km2),
+    `Cable (%)`   = sprintf('%0.2f - %0.2f%%', cable2_pct, cable3_pct)) %>%
+  select(Region=region, `Speed m/s`=`speed m/s`, `Cable (km^2)`, `Cable (%)`, `Region (km^2)`=area_km2)
   # rename(
   #   rgn = region,
   #   rgn_km2      = area_km2,
