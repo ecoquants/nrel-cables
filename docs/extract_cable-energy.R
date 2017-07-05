@@ -5,50 +5,70 @@ if (basename(getwd()) == 'nrel-cables') setwd('docs')
 source('./packages_vars.R')
 
 # cables: read ----
-cbl2 = read_sf(dx2_geo) %>%
-  select(-buffer) %>%
-  as('Spatial')
-cbl3 = read_sf(dx3_geo) %>%
-  select(-buffer) %>%
-  as('Spatial')
-cbl_prj = st_crs(cbl2 %>% st_as_sf())$proj4string
-
-
-# [Marine Regions · Gulf of Mexico (IHO Sea Area)](http://www.marineregions.org/gazetteer.php?p=details&id=4288)
-gom_geo_url = 'http://geo.vliz.be/geoserver/wfs?request=getfeature&service=wfs&version=1.1.0&typename=MarineRegions:iho&outputformat=json&filter=%3CPropertyIsEqualTo%3E%3CPropertyName%3Eid%3C%2FPropertyName%3E%3CLiteral%3E26%3C%2FLiteral%3E%3C%2FPropertyIsEqualTo%3E'
-gom_kml = 'http://geo.vliz.be/geoserver/wms?request=GetMap&service=wms&version=1.1.1&srs=EPSG:4326&layers=MarineRegions:iho&width=800&height=376&bbox=-98.0539218184371,17.4068080184755,-80.4330407378397,31.464843750339&styles=gazetteer_red&Format=KML&filter=%3CPropertyIsEqualTo%3E%3CPropertyName%3Eid%3C%2FPropertyName%3E%3CLiteral%3E26%3C%2FLiteral%3E%3C%2FPropertyIsEqualTo%3E'
-
-tmp_geo = tempfile(fileext='.geojson')
-download.file(gom_geo_url, tmp_geo)
-gom_sf = read_sf(tmp_geo)
-gom = read_sf(gom_kml) %>% # st_cast('MULTIPOLYGON')
-  
-gom2 =  st_union(gom)
-
-plot(gom2)  
-  aggregate(gom['Name'], list(Name=Name), first)
-  #slice(1) %>%
-  
-
-
-gom = 
-
-names(gom)
-
-ggplot(gom2) +
-  geom_sf(fill='gray')
-# plot(gom['Name']) # SLOW!
-# TODO: http://r-spatial.org/r/2017/01/30/mapedit_intro.html
-
+cbl2    = read_sf(dx2_geo) %>% as('Spatial')
+cbl3    = read_sf(dx3_geo) %>% as('Spatial')
+usa_rgn = read_sf(usa_rgn_geo) %>% as('Spatial')
+proj4string(cbl2) = crs_gcs_w
+proj4string(cbl3) = crs_gcs_w
+proj4string(usa_rgn) = crs_gcs_w
 
 # tide ----
-if (!file.exists(tide_geo)){
+if (!file.exists(tide_tif)){
   
   # projection of original tide data: `st_crs(tide_east)$proj4string`
-  tide_prj = '+proj=longlat +datum=NAD83 +no_defs'
+  crs_tide = '+proj=longlat +datum=NAD83 +no_defs'
   
   # tide: read data ----
   if (!file.exists(tide_csv)){
+    
+    system.time({
+      pts_east = read_sf(tide_shps[['East']])
+      
+      pts_e = spTransform(pts_east %>% as('Spatial'), crs_gcs_w)
+      
+      bbox_ply = function(x){
+        # x = pts_e
+        x %>% as('Spatial') %>%
+          raster::extent() %>%
+          as('SpatialPolygons') %>%
+          st_as_sf()
+      }
+      
+      usa_rgn_sf = usa_rgn %>% st_as_sf()
+      
+      bbox_e = bbox_ply(pts_e)
+      usa2 = usa_rgn_sf %>%
+        mutate(
+          in_east = st_intersects(bbox_ply(geometry), bbox_e))
+      
+      e <- as(raster::extent(78.46801, 78.83157, 19.53407, 19.74557), "SpatialPolygons")
+      proj4string(e) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
+      plot(e)
+      
+      
+      
+      bbox(usa_rgn)
+      bbox(pts_e)
+      
+      p = pts_e[1:10000,]
+      
+      p_sf = p %>% st_as_sf()
+      usa_rgn_sf = usa_rgn %>% st_as_sf()
+      p2_sf = st_join(p_sf, usa_rgn_sf)
+      
+      bb = st_bbox(usa_rgn %>% st_as_sf()) %>% st_as_text()
+      usa_rgn %>%
+        st_as_sf() %>%
+        mutate(
+          st_intersects(st_bbox(geometry), st_
+        )
+      x = gIntersection(usa_rgn, bbox(pts_e))
+      
+      
+      
+      
+    })
+    
     bind_rows(
       read_sf(tide_shps[['East']]) %>%
         as_tibble() %>%
@@ -69,17 +89,19 @@ if (!file.exists(tide_geo)){
   tp = as.data.frame(td)
   row.names(tp) = tp$id
   coordinates(tp) = ~lon + lat
-  proj4string(tp) = tide_prj
-  tp = spTransform(tp, cbl_prj)
+  proj4string(tp) = crs_tide
+  tp = spTransform(tp, crs_gcs_w)
+  
+  tp = raster::intersect(tp, usa_rgn)
   
   # tide: rasterize and extract by region
   rgn_r = list(); rgn_v = list(); rgn_c = list()
-  for (rgn in c('East','West')){ # rgn='East'
+  for (rgn in cbl3@data$territory){ # rgn='East'
     
     pts = subset(tp, region==rgn)
     rgn_r[[rgn]] = rasterize(
       pts,
-      raster(crs=cbl_prj, ext=extent(pts), resolution=0.01),
+      raster(crs=crs_gcs_w, ext=extent(pts), resolution=0.01),
       field='pwr_wm2', fun=mean)
     
     s = stack(r, area(r))

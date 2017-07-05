@@ -5,8 +5,7 @@ packages = c(
   # dynamic document creation
   'knitr','rmarkdown','bookdown','DT', 
   # plotting & mapping
-  #'RColorBrewer','ggplot2','plotly','leaflet', 
-  'RColorBrewer','viridis','scales','ggplot2','ropensci/plotly','maps','albersusa','mapproj','wch/webshot', # ,'leaflet'
+  'RColorBrewer','viridis','scales','tidyverse/ggplot2','ropensci/plotly','maps','albersusa','mapproj','wch/webshot','geojsonio','rmapshaper', # ,'plotKML'
   # [mapedit](ttp://r-spatial.org/r/2017/01/30/mapedit_intro.html)
   'bhaskarvk/leaflet', 'bhaskarvk/leaflet.extras', 'r-spatial/mapview@develop', 'r-spatial/mapedit',
   # spatial analytical
@@ -31,7 +30,8 @@ select = dplyr::select
 # variables & paths ----
 d_incr = 100 # depth increment
 redo = F
-crs_gcs = leaflet:::epsg4326
+crs_gcs    = leaflet:::epsg4326
+crs_gcs_w = '+proj=longlat +datum=WGS84 +lon_wrap=180'
 
 # create_cable-buffer.R paths ----
 gdb           = '../data/SubmarineCables/NOAAChartedSubmarineCables.gdb'
@@ -41,7 +41,12 @@ lns_geo       = '../data/lns.geojson'
 lns_usa_geo   = '../data/lns_usa.geojson'
 eez_shp       = '~/mbon_data_big/technical/boundaries/eez/eez.shp'
 usa_geo       = '../data/eez_usa.geojson'
+usa_rgn_geo   = '../data/usa_rgn.geojson'
+usa_rgn_s_geo = '../data/usa_rgn_simplify05.geojson'
+usa_rgn_kml   = '../data/usa_rgn.kmz'
 lns_d1x_geo   = '../data/lns_d1x.geojson'
+lns_d1x_rgn_geo = '../data/lns_d1x_rgn.geojson'
+lns_rgn_geo   = '../data/lns_rgn.geojson'
 dx2_geo       = sprintf('../data/buf_2xdepth_incr%sm.geojson', d_incr)
 dx3_geo       = sprintf('../data/buf_3xdepth_incr%sm.geojson', d_incr)
 dx2_kml       = '../data/buf_2xdepth_incr100m.kml'

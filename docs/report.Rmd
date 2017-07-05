@@ -64,38 +64,52 @@ read_csv('../data/data_sources.csv') %>%
 
 ## tbl_eez-usa
 
-```{r tbl-eez-usa, eval=T}
-usa = read_sf(usa_geo)
+```{r tblUSATerrritories, eval=T}
+usa = read_sf(usa_rgn_s_geo)
 
-eez_usa_tbl = usa %>%
+usa_tbl = usa %>%
   as_tibble() %>%
-  select(eez=Territory1, eez_part=part, area_km2=Area_km2)
+  select(territory, area_km2)
 
 if (out_html){
-  eez_usa_tbl %>%
-    datatable() %>%
-    formatRound('area_km2', digits=1)
+  usa_tbl %>%
+    datatable(options = list(pageLength=nrow(usa_tbl), dom='t')) %>%
+    formatCurrency(
+      c('area_km2'), 
+      currency = "", interval = 3, mark = ",", digits=1)
 } else {
-  eez_usa_tbl %>%
+  usa_tbl %>%
     kable(caption = 'EEZ parts for USA.') # , booktabs=T)
 }
 ```
 
-```{r map-span-dateline, eval=F}
+```{r mapStudyArea, eval=T, fig.cap='Map of NOAA Charted Submarine cables in the United States as of December 2012.'}
+lns_rgn = read_sf(lns_rgn_geo)
 
-l <- "LINESTRING(-150.5 57.0,-160.5 57.0,-170.5 57.0,179.5 57.0,169.5 57.0,159.5 57.0)" %>%
-  sf::st_as_sfc(crs = "+init=epsg:4326")
+pal <- colorFactor(
+  colorRampPalette(brewer.pal(11,'Spectral'))(length(usa$territory)),
+  usa$territory)
 
-l_sp <- l %>% as("Spatial") %>%
-  sp::spTransform(l_sp,"+proj=longlat +datum=WGS84 +lon_wrap=180")
-sp::proj4string(l_sp)
-bbox(l_sp)
-
-m <- l_sp %>%
-  leaflet() %>%
-  addProviderTiles("Esri.OceanBasemap") %>%
-  addPolylines(weight = 4, opacity = 0.35, color = 'black')
-m
+m = leaflet(usa) %>%
+  addProviderTiles('Esri.OceanBasemap') %>%
+  addPolylines(
+    data = lns_rgn, group='cables',
+    color='black', opacity = 1, weight=1,
+    popup = ~sprintf(
+      "scaleBand: %s<br>description: %s<br>effectiveDate: %s",
+      scaleBand, description, effectiveDate)) %>%
+  addPolygons(
+   label = ~sprintf('%s', territory),
+   color = ~pal(territory)) #%>%
+if (out_html){
+  m
+} else {
+  # [How to save Leaflet in R map as png or jpg file? - Stack Overflow](https://stackoverflow.com/questions/31336898/how-to-save-leaflet-in-r-map-as-png-or-jpg-file)
+  m_html = '../tmp/mapStudyArea.html'
+  m_png  = '../tmp/mapStudyArea.png'
+  saveWidget(m, m_html, selfcontained=F)
+  webshot(m_html, file=m_png, cliprect="viewport")
+}
 ```
 
 TODO:
@@ -112,78 +126,6 @@ TODO:
 * [Mapping All Fifty U.S. States](https://cran.r-project.org/web/packages/fiftystater/vignettes/fiftystater.html)
 * [r - Relocating Alaska and Hawaii on thematic map of the USA with ggplot2 - Stack Overflow](https://stackoverflow.com/questions/13757771/relocating-alaska-and-hawaii-on-thematic-map-of-the-usa-with-ggplot2/13767984#13767984)
 * [ohiprep/model_create_regions.py at 66bcf4e39b63b154437dda55aec6ed825ac47f05 · OHI-Science/ohiprep](https://github.com/OHI-Science/ohiprep/blob/66bcf4e39b63b154437dda55aec6ed825ac47f05/globalprep/spatial/NCEAS-Regions_v2014/model_create_regions.py)
-
-```{r mapStudyArea, eval=T, fig.cap='Map of NOAA Charted Submarine cables in the United States as of December 2012.'}
-lns_usa = read_sf(lns_usa_geo)
-
-usa = usa %>%
-  filter(part %in% lns_usa$part)
-
-# usa %>%
-#   as_tibble() %>%
-#   select(eez=Territory1, eez_part=part, area_km2=Area_km2) %>%
-#   datatable() %>%
-#   formatRound('area_km2', digits=1)
-
-pal <- colorFactor(
-  colorRampPalette(brewer.pal(11,'Spectral'))(length(usa$part)),
-  usa$part)
-
-m = leaflet(usa) %>%
-  addProviderTiles('Esri.OceanBasemap') %>%
-  addPolylines(
-    data = lns_usa, group='cables',
-    color='black', opacity = 1, weight=1,
-    popup = ~sprintf(
-      "scaleBand: %s<br>description: %s<br>effectiveDate: %s",
-      scaleBand, description, effectiveDate)) %>%
-  addPolygons(
-   label = ~sprintf('%s', GeoName),
-   color = ~pal(part)) %>%
-  setView(-97, 38, zoom=3)
-
-if (out_html){
-  m
-} else {
-
-  # [How to save Leaflet in R map as png or jpg file? - Stack Overflow](https://stackoverflow.com/questions/31336898/how-to-save-leaflet-in-r-map-as-png-or-jpg-file)
-  m_html = '../tmp/map_study-area.html'
-  m_png  = '../tmp/map_study-area.png'
-  saveWidget(m, m_html, selfcontained=F)
-  webshot(m_html, file=m_png, cliprect="viewport")
-  #knitr::include_graphics(m_png)
-
-  #TODO!
-  #plot(usa['part'])
-
-  #fortify(region = "STATE_NAME")
-
-  #crimes <- data.frame(state = tolower(rownames(USArrests)), USArrests)
-  # map_id creates the aesthetic mapping to the state name column in your data
-  # p <- ggplot(crimes, aes(map_id = state)) +
-  #   # map points to the fifty_states shape data
-  #   geom_map(fill='gray80', color='white',map=fifty_states) +
-  #   geom_map(fill='gray80', color='white',map=fifty_states) +
-  #   expand_limits(x = fifty_states$long, y = fifty_states$lat) +
-  #   coord_map() +
-  #   #scale_x_continuous(breaks = NULL) +
-  #   #scale_y_continuous(breaks = NULL) +
-  #   labs(x = "", y = "") +
-  #   fifty_states_inset_boxes()
-  #   #theme(legend.position = "bottom",
-  #   #      panel.background = element_blank())
-  # p
-  #
-  #
-  # wrld = map_data('world')
-  #
-  # p = ggplot() + geom_polygon(data=wrld, aes(x=long, y=lat, group=group), color='white', fill='gray10')
-  # p
-  #
-  #
-
-}
-```
 
 ## Depth
 
@@ -263,31 +205,40 @@ cable_buf = simplify(cable_buf)
 
 A depth-varying buffer to the offshore cables, 2 \* depth for "minimum" and 3 \* depth for "recommended" separation zones for routing new cables, by first intersecting depth with cables, then iterating over each depth to apply the appropriate buffers before finally dissolving all buffers. In order to apply the buffer, I needed to project from geographic coordinates to a projection that minimizes area distortion, so chose Albers Equal Area and applied the ["one-sixth rule"]( http://desktop.arcgis.com/en/arcmap/latest/map/projections/albers-equal-area-conic.htm#GUID-2158C4F9-F197-458E-94F0-84933C1BE6B7) based on the extent of the cable features to minimize distortion.
 
-```{r map_cables}
+```{r mapCableBuffs}
 dx2     = read_sf(dx2_geo)
 dx3     = read_sf(dx3_geo)
-lns_d1x = read_sf(lns_d1x_geo)
+lns_d1x = read_sf(lns_d1x_rgn_geo)
 
-leaflet() %>%
+m = leaflet() %>%
   addProviderTiles("Stamen.TonerLite", group = "B&W") %>%
   addProviderTiles('Esri.OceanBasemap', group = "Ocean") %>%  #
   addPolygons(
-    data = dx2, group='buffer: 3*depth',
+    data = dx2, group='buffer: 2*depth',
     color='red', stroke=F, fillOpacity = 0.5) %>%
   addPolygons(
-    data = dx3, group='buffer: 2*depth',
+    data = dx3, group='buffer: 3*depth',
     color='red', stroke=F, fillOpacity = 0.5) %>%
   addPolylines(
     data = lns_d1x, group='cables',
     color='black', opacity = 1, weight=1,
     popup = ~sprintf(
-      "scaleBand: %s<br>description: %s<br>effectiveDate: %s<br>EEZ: %s<br>EEZ part: %d<br>Buffer (1x): %d",
-      scaleBand, description, effectiveDate, GeoName, part, buf1x)) %>%
+      "scaleBand: %s<br>description: %s<br>effectiveDate: %s<br>Territory: %s<br>Buffer (1x): %d",
+      scaleBand, description, effectiveDate, territory, buf1x)) %>%
   addLayersControl(
     baseGroups = c("B&W", "Ocean"),
     overlayGroups = c('buffer: 3*depth', 'buffer: 2*depth', 'cables'),
-    options = layersControlOptions(collapsed = FALSE)) %>%
-  setView(-97, 38, zoom=3)
+    options = layersControlOptions(collapsed = FALSE))
+
+if (out_html){
+  m
+} else {
+  # [How to save Leaflet in R map as png or jpg file? - Stack Overflow](https://stackoverflow.com/questions/31336898/how-to-save-leaflet-in-r-map-as-png-or-jpg-file)
+  m_html = '../tmp/mapCableBuffs.html'
+  m_png  = '../tmp/mapCableBuffs.png'
+  saveWidget(m, m_html, selfcontained=F)
+  webshot(m_html, file=m_png, cliprect="viewport")
+}
 ```
 
 # Results
