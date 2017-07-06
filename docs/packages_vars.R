@@ -1,7 +1,7 @@
 # load packages, installing if needed ----
 packages = c(
   # general data science
-  'tidyverse',  
+  'tidyverse','stringr',
   # dynamic document creation
   'knitr','rmarkdown','bookdown','DT', 
   # plotting & mapping
@@ -75,6 +75,6 @@ wave_cbls_csv = '../data/wave_cables.csv'
 tide_shps    = list(
   West = '/Volumes/Best HD/nrel_data_big/nrel.gov/tide/tide_data_west/tide_data_west.shp',
   East = '/Volumes/Best HD/nrel_data_big/nrel.gov/tide/tide_data_east/tide_data_east.shp')
-tide_tif      = '../data/tide.tif'
+tide_res_dd   = 0.005 # tide raster resolution in decimal degrees
 tide_csv      = '../data/tide.csv'
 tide_cbls_csv = '../data/tide_cables.csv'

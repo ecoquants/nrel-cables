@@ -79,7 +79,7 @@ if (out_html){
       currency = "", interval = 3, mark = ",", digits=1)
 } else {
   usa_tbl %>%
-    kable(caption = 'EEZ parts for USA.') # , booktabs=T)
+    kable(caption = 'Territories within the United States exclusive economic zone (EEZ).') # , booktabs=T)
 }
 ```
 
