@@ -8,9 +8,15 @@ source('./packages_vars.R')
 cbl2    = read_sf(dx2_geo) %>% as('Spatial')
 cbl3    = read_sf(dx3_geo) %>% as('Spatial')
 usa_rgn = read_sf(usa_rgn_geo) %>% as('Spatial')
-proj4string(cbl2) = crs_gcs_w
-proj4string(cbl3) = crs_gcs_w
-proj4string(usa_rgn) = crs_gcs_w
+suppressWarnings({
+  proj4string(cbl2) = crs_gcs_w
+  proj4string(cbl3) = crs_gcs_w
+  proj4string(usa_rgn) = crs_gcs_w
+})
+
+# usa_rgn
+usa_rgn_s = read_sf(usa_rgn_s_geo)
+usa_rgn = read_sf(usa_rgn_geo)
 
 # tide ----
 if (!file.exists(tide_tif)){
@@ -19,115 +25,130 @@ if (!file.exists(tide_tif)){
   crs_tide = '+proj=longlat +datum=NAD83 +no_defs'
   
   # tide: read data ----
+  # NOTE: region (rgn) refers to analytical energy input area, 
+  #       whereas territory (ter) is US territory from EEZ subdivisions
   if (!file.exists(tide_csv)){
     
-    system.time({
-      pts_east = read_sf(tide_shps[['East']])
+    process_tide_pts = function(rgn){
       
-      pts_e = spTransform(pts_east %>% as('Spatial'), crs_gcs_w)
+      cat(sprintf('rgn %s -- %s\n', rgn, Sys.time()))
+      csv_rgn_pts = sprintf('../data/tide_rgn-%s_pts.csv', rgn)
       
-      bbox_ply = function(x){
-        # x = pts_e
-        x %>% as('Spatial') %>%
-          raster::extent() %>%
-          as('SpatialPolygons') %>%
-          st_as_sf()
-      }
-      
-      usa_rgn_sf = usa_rgn %>% st_as_sf()
-      
-      bbox_e = bbox_ply(pts_e)
-      usa2 = usa_rgn_sf %>%
-        mutate(
-          in_east = st_intersects(bbox_ply(geometry), bbox_e))
-      
-      e <- as(raster::extent(78.46801, 78.83157, 19.53407, 19.74557), "SpatialPolygons")
-      proj4string(e) <- "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
-      plot(e)
-      
-      
-      
-      bbox(usa_rgn)
-      bbox(pts_e)
-      
-      p = pts_e[1:10000,]
-      
-      p_sf = p %>% st_as_sf()
-      usa_rgn_sf = usa_rgn %>% st_as_sf()
-      p2_sf = st_join(p_sf, usa_rgn_sf)
-      
-      bb = st_bbox(usa_rgn %>% st_as_sf()) %>% st_as_text()
-      usa_rgn %>%
+      # read in points, project to wrap around dateline
+      pts = read_sf(tide_shps[['East']]) %>%
+        as('Spatial') %>% 
+        spTransform(crs_gcs_w) %>% 
         st_as_sf() %>%
-        mutate(
-          st_intersects(st_bbox(geometry), st_
-        )
-      x = gIntersection(usa_rgn, bbox(pts_e))
-      
-      
-      
-      
-    })
+        select(lon=LONGIT, lat=LATITU, pwr_wm2=MEANPO)
     
-    bind_rows(
-      read_sf(tide_shps[['East']]) %>%
+      # get bounding box for limiting USA territories
+      cat(sprintf('  bbox -- %s\n', Sys.time()))
+      b = st_bbox(pts)
+      bb = st_polygon(list(matrix(c(
+        b['xmin'], b['ymin'],
+        b['xmin'], b['ymax'],
+        b['xmax'], b['ymax'],
+        b['xmax'], b['ymin'],
+        b['xmin'], b['ymin']), ncol=2, byrow=T)))
+
+      # limit simplified US territories to those intersecting pts bounding box
+      usa_pts = usa_rgn_s %>%
+        filter(st_intersects(geometry, bb, sparse=F)) %>%
+        select(territory)
+
+      # spatial join on simplified US territories: intersect and join territory column
+      cat(sprintf('  st_join simple -- %s\n', Sys.time()))
+      pts = st_join(pts, usa_pts, prepared=T) # 2.1 min for East
+      
+      # get points without a territory assigned
+      pts_na = pts %>%
+        filter(is.na(territory)) %>%
+        select(-territory)
+    
+      # spatial join on high res US territories for pts without territory
+      cat(sprintf('  st_join hi-res -- %s\n', Sys.time()))
+      usa_pts = usa_rgn %>%
+        filter(territory %in% unique(usa_pts$territory)) %>%
+        select(territory)
+      pts_na = st_join(pts_na, usa_pts, prepared=T) # 2 min on 87,025 East NAs
+    
+      # combine pts and pts_na
+      cat(sprintf('  rbind -- %s\n', Sys.time()))
+      pts = rbind(
+        pts %>%
+          filter(is.na(territory)),
+        pts_na) %>%
+        mutate(
+          region=rgn)
+      
+      # write to csv
+      pts %>% 
         as_tibble() %>%
-        select(lon=LONGIT, lat=LATITU, pwr_wm2=MEANPO) %>%
-        mutate(
-          region = 'East'),
-      read_sf(tide_shps[['West']]) %>%
-        as_tibble() %>%
-        select(lon=LONGIT, lat=LATITU, pwr_wm2=MEANPO) %>%
-        mutate(
-          region = 'West')) %>%
-      write_csv(tide_csv)
+        write_csv(csv_rgn_pts)
+      
+      # rasterize by territory
+      pts = pts %>%
+        filter(!is.na(territory))
+      for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1]
+
+        cat(sprintf('  ter %s -- %s\n', ter, Sys.time()))
+        ter_s   = str_replace(ter,' ','-')
+        tif   = sprintf('../data/tide_ter-%s.tif', ter_s)
+        csv_r = sprintf('../data/tide_ter-%s_tif.csv', ter_s)
+        csv_c = sprintf('../data/tide_ter-%s_tif-cable.csv', ter_s)
+        
+        p = pts %>%
+          filter(territory==ter) %>% 
+          as('Spatial')
+        
+        # rasterize
+        cat(sprintf('    rasterize -- %s\n', Sys.time()))
+        r = rasterize(
+          p,
+          raster(crs=crs_gcs_w, ext=extent(p), resolution=tide_res_dd),
+          field='pwr_wm2', fun=mean) # 9.6 sec for East 0.005 res
+
+        # write raster
+        writeRaster(r, tif, overwrite=T)
+        
+        # stack with area
+        s = stack(r, area(r))
+        names(s) = c('pwr_wm2', 'area_km2')
+        
+        cat(sprintf('    getValues -- %s\n', Sys.time()))
+        v_r = getValues(s) %>% as_tibble() %>%
+          filter(!is.na(pwr_wm2)) %>%
+          mutate(
+            territory = ter)
+        write_csv(v_r, csv_r)
+        
+        cat(sprintf('    extract -- %s\n', Sys.time()))
+        v_c = bind_rows(
+          extract(s, 
+                  cbl2 %>% subset(territory==ter), df=T) %>%
+            mutate(
+              cable = 'cable2'),
+          extract(s, 
+                  cbl3 %>% subset(territory==ter), df=T) %>%
+            mutate(
+              cable = 'cable3')) %>%
+          as_tibble() %>%
+          filter(!is.na(pwr_wm2)) %>%
+          mutate(
+            territory = ter)
+        write_csv(v_r, csv_c)
+      } # end for (ter in...)
+      
+    } # end process_tide_pts
+    
+    for (rgn in names(tide_shps)){
+      process_tide_pts(rgn)  
+    }
+    
   }
-  td = read_csv(tide_csv)
-  # hist(td$pwr_wm2); max(td$pwr_wm2)
-  
-  # tide: convert to points
-  tp = as.data.frame(td)
-  row.names(tp) = tp$id
-  coordinates(tp) = ~lon + lat
-  proj4string(tp) = crs_tide
-  tp = spTransform(tp, crs_gcs_w)
-  
-  tp = raster::intersect(tp, usa_rgn)
-  
-  # tide: rasterize and extract by region
-  rgn_r = list(); rgn_v = list(); rgn_c = list()
-  for (rgn in cbl3@data$territory){ # rgn='East'
-    
-    pts = subset(tp, region==rgn)
-    rgn_r[[rgn]] = rasterize(
-      pts,
-      raster(crs=crs_gcs_w, ext=extent(pts), resolution=0.01),
-      field='pwr_wm2', fun=mean)
-    
-    s = stack(r, area(r))
-    names(s) = c('pwr_wm2', 'area_km2')
-    
-    rgn_v[[rgn]] = getValues(s) %>% as_tibble() %>%
-      filter(!is.na(pwr_wm2)) %>%
-      mutate(
-        region = rgn)
-    
-    rgn_c[[rgn]] = bind_rows(
-      extract(s, cbl2, df=T) %>%
-        mutate(
-          cable = 'cable2'),
-      extract(s, cbl3, df=T) %>%
-        mutate(
-          cable = 'cable3')) %>%
-      as_tibble() %>%
-      filter(!is.na(pwr_wm2)) %>%
-      mutate(
-        region = rgn)
-  }
-  
-  # tide: merge rasters & save as tif
-  r_all = merge(rgn_r[['East']], rgn_r[['West']], tolerance=0.2)
-  writeRaster(r_all, tide_tif)
+
+  # TODO: in report.Rmd, leaflet viz tide rasters per territory w/ regex in data/tide_ter-*.tif
+  # TODO: join data from territories for summarizing below
   
   # tide: summarize table by region, energy breaks
   brks = c(0,500,1000,1500,10753)
@@ -276,6 +297,9 @@ if (!file.exists(wind_geo)){
       energy_num = factor(energy_cat, levels(energy_cat), labels=7:12) %>% as.character() %>% as.integer())
   
   # dissolve on region & energy
+  
+  raster::intersect(wind, usa_rgn_s)
+  
   wind = raster::aggregate(wind, by=c('region','energy_lbl','energy_num'))
   
   # calculate area
