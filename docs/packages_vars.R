@@ -3,11 +3,11 @@ packages = c(
   # general data science
   'tidyverse','stringr',
   # dynamic document creation
-  'knitr','rmarkdown','bookdown','DT', 
+  'knitr','rmarkdown','bookdown','DT','htmltools',
   # plotting & mapping
   'RColorBrewer','viridis','scales','tidyverse/ggplot2','ropensci/plotly','maps','albersusa','mapproj','wch/webshot','geojsonio','rmapshaper', # ,'plotKML'
   # [mapedit](ttp://r-spatial.org/r/2017/01/30/mapedit_intro.html)
-  'bhaskarvk/leaflet', 'bhaskarvk/leaflet.extras', 'r-spatial/mapview@develop', 'r-spatial/mapedit',
+  'bhaskarvk/leaflet', 'bhaskarvk/leaflet.extras', 'r-spatial/mapview@develop', 'r-spatial/mapedit','cleangeo',
   # spatial analytical
   'sp','rgdal','raster','ncdf4','rgeos','geosphere','edzer/sfr','eblondel/cleangeo','geojsonio','maptools','hrbrmstr/albersusa') 
 for (pkg in packages){ # pkg= packages[1] # pkg = 'r-spatial/mapview@develop' # pkg='ropensci/plotly'

@@ -271,8 +271,8 @@ TODO:
 ```{r mapWind, eval=F}
 wind = read_sf(wind_geo)
 
-wind %>% as('Spatial') %>%
-  spplot(.[''])
+# wind %>% as('Spatial') %>%
+#   spplot(.[''])
 ```
 
 
@@ -341,13 +341,35 @@ if (out_html){
 
 units: wave energy flux (kW/m)
 
-```{r map_wave, eval=T}
+```{r mapWave, eval=T}
 #wave_lvls = unique(wave_cbls$energy_lbl)
+# read and clean wave
+wave = read_sf(wave_geo) %>% 
+  as('Spatial') %>% 
+  clgeo_Clean() %>%
+  st_as_sf() %>%
+  filter(
+    !is.na(territory)) %>%
+  mutate(
+    energy = factor(energy_num, labels=unique(energy_lbl), ordered=T)) %>%
+  group_by(territory, energy) %>%
+  summarise() # mapview(wave, zcol='energy')
 
-wave = read_sf(wave_geo)
+pal = colorFactor('Spectral', wave$energy, reverse=T)
 
-wave %>% select(`kW/m` = energy_num) %>% as('Spatial') %>%
-  spplot()
+leaflet(wave) %>% 
+  addProviderTiles('Esri.OceanBasemap') %>%
+  addPolygons(
+    color="#444444", weight = 1, smoothFactor = 0.5,
+    opacity = 1.0, fillOpacity = 0.5,
+    fillColor = ~pal(energy),
+    label = ~sprintf(
+      "<strong>%s</strong>: %s kW/m<sup>2</sup>",
+      territory, energy) %>% lapply(HTML),
+    highlightOptions = highlightOptions(
+      color = "white", weight = 2, bringToFront = T)) %>%
+  addLegend(pal=pal, values=~energy, title='Wave Energy (kW/m)')
+# TODO: fix overlap w/ GoMex vs East and Puerto Rico vs US Virgin Islands
 ```
 
 
@@ -427,9 +449,24 @@ units: mean power (W/m^2)
 TODO: seperate tif into east and west for display in leaflet
 
 ```{r map_tide, eval=F}
-tide = raster(tide_tif)
+#tide = raster(tide_tif)
+#plot(tide_tif)
+# TODO: in report.Rmd, leaflet viz tide rasters per territory w/ regex in data/tide_ter-*.tif
 
-plot(tide_tif)
+tif = '/Users/bbest/github/nrel-cables/data/tide_ter-East_0.01.tif'
+r = raster(tif)
+r_l = projectRasterForLeaflet(r)
+
+#pal <- colorNumeric('Spectral', values(r_l), na.color='transparent', reverse=T)
+#brks = c(0,500,1000,1500,10753)
+pal = colorBin(
+  'Spectral', values(r_l), bins =c(0,500,1000,1500,11000), 
+  pretty=T, na.color='transparent', reverse=T)
+
+leaflet() %>% 
+  addProviderTiles('Esri.OceanBasemap') %>%
+  addRasterImage(r_l, colors=pal, opacity=0.8, project=F) %>%
+  addLegend(pal=pal, values=values(r_l), title='Tidal Energy (W/m^2)')
 ```
 
 
