@@ -24,9 +24,9 @@ if (!file.exists(tide_cbls_csv) | redo){
   # NOTE: region (rgn) refers to analytical energy input area, 
   #       whereas territory (ter) is US territory from EEZ subdivisions
   #redo = T
-  if (!file.exists(tide_csv) | redo){
+  if (!file.exists(tide_csv) | redo){ 
     
-    process_tide_pts = function(rgn){
+    process_tide_pts = function(rgn){ # rgn='East' # rgn='West'
       
       cat(sprintf('rgn %s -- %s\n', rgn, Sys.time()))
       csv_rgn_pts = sprintf('../data/tide_rgn-%s_pts.csv', rgn)
@@ -85,14 +85,8 @@ if (!file.exists(tide_cbls_csv) | redo){
         pts %>% 
           as_tibble() %>%
           write_csv(csv_rgn_pts)
-        write_sf(pts, geo_rgn_pts)
+        write_sf(pts, geo_rgn_pts, delete_dsn=T)
         
-        # BAD: table(pts$territory, useNA = 'ifany') # for rgn='East'
-        #    East    Gulf of Mexico    Puerto Rico  US Virgin Islands     <NA>
-        #  36,298            4,150            124                 44  133,434
-        # table(pts0$territory, useNA = 'ifany') # for rgn='East'
-        #    East    Gulf of Mexico   Puerto Rico  US Virgin Islands 
-        # 960,825          585,512         44,442             14,988 
       } else {
         
         pts = read_csv(csv_rgn_pts) %>%
@@ -101,12 +95,12 @@ if (!file.exists(tide_cbls_csv) | redo){
             latitude  = lat) %>%
           st_as_sf(coords = c('longitude','latitude'), agr='constant', crs=crs_gcs_w)
         
-      }
+      } # end if (!file.exists(csv_rgn_pts)...
       
       # rasterize by territory
       pts = pts %>%
         filter(!is.na(territory))
-      for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1]
+      for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1] # ter = 'Alaska'
 
         cat(sprintf('  ter %s -- %s\n', ter, Sys.time()))
         ter_s = str_replace_all(ter,' ','-')
@@ -118,29 +112,36 @@ if (!file.exists(tide_cbls_csv) | redo){
         p = pts %>%
           filter(territory==ter) %>% 
           as('Spatial')
-        write_sf(pts %>% filter(territory==ter), geo)
+        #write_sf(pts %>% filter(territory==ter), geo, delete_dsn=T)
         
         # rasterize
-        cat(sprintf('    rasterize -- %s\n', Sys.time()))
-        r = rasterize(
-          p,
-          raster(crs=crs_gcs_w, ext=extent(p), resolution=tide_res_dd),
-          field='pwr_wm2', fun=mean, na.rm=T) # 9.6 sec for East 0.005 res
-        
-        # write raster
-        writeRaster(r, tif, overwrite=T)
-        
+        if (!file.exists(tif) | redo){
+          cat(sprintf('    rasterize -- %s\n', Sys.time()))
+          r = rasterize(
+            p,
+            raster(crs=crs_gcs_w, ext=extent(p), resolution=tide_res_dd),
+            field='pwr_wm2', fun=mean, na.rm=T) # 9.6 sec for East 0.005 res
+          
+          # write raster
+          writeRaster(r, tif, overwrite=T)
+        } else {
+          r = raster(tif)
+        }
         # stack with area
         s = stack(r, area(r))
         names(s) = c('pwr_wm2', 'area_km2')
         
         # get values for whole raster
-        cat(sprintf('    getValues -- %s\n', Sys.time()))
-        v_r = getValues(s) %>% as_tibble() %>%
-          filter(!is.na(pwr_wm2)) %>%
-          mutate(
-            territory = ter)
-        write_csv(v_r, csv_r)
+        if (!file.exists(csv_r) | redo){
+          cat(sprintf('    getValues -- %s\n', Sys.time()))
+          v_r = getValues(s) %>% as_tibble() %>%
+            filter(!is.na(pwr_wm2)) %>%
+            mutate(
+              territory = ter)
+          write_csv(v_r, csv_r)
+        } else {
+          v_r = read_csv(csv_r)
+        }
         
         # extract values of cable overlapping raster
         cat(sprintf('    extract -- %s\n', Sys.time()))
@@ -157,12 +158,13 @@ if (!file.exists(tide_cbls_csv) | redo){
           filter(!is.na(pwr_wm2)) %>%
           mutate(
             territory = ter)
-        write_csv(v_r, csv_c)
+        cat(sprintf('    write csv_c -- %s\n', Sys.time()))
+        write_csv(v_c, csv_c) # v_c0 = read_csv(csv_c)
       } # end for (ter in...)
       
     } # end process_tide_pts = function()
     
-    for (rgn in names(tide_shps)){ # 20 min
+    for (rgn in names(tide_shps)){ # rgn='West' # 20 min
       process_tide_pts(rgn)  
     }
     
@@ -173,7 +175,7 @@ if (!file.exists(tide_cbls_csv) | redo){
   
   # summarize for all raster values
   f_v = list.files('../data', 'tide_ter-.*_tif\\.csv$', full.names=T)
-  d_v = bind_rows(sapply(f_v, read_csv)) %>%
+  d_v = bind_rows(lapply(f_v, read_csv)) %>%
     mutate(
       energy_cat = cut(pwr_wm2, brks, include.lowest=T)) %>%
     group_by(territory, energy_cat) %>%
@@ -182,7 +184,7 @@ if (!file.exists(tide_cbls_csv) | redo){
   
   # summarize for overlap with cables
   f_c = list.files('../data', 'tide_ter-.*_tif-cable\\.csv$', full.names=T)
-  d_c = bind_rows(sapply(f_c, read_csv)) %>%
+  d_c = bind_rows(lapply(f_c, read_csv)) %>%
     mutate(
       energy_cat = cut(pwr_wm2, brks, include.lowest=T)) %>%
     group_by(territory, energy_cat, cable) %>%
@@ -196,24 +198,37 @@ if (!file.exists(tide_cbls_csv) | redo){
   
   # tide: summmarize ----
   tide_cbls = d_v %>%
-    left_join(d_c, by=c('region','energy_cat')) %>%
+    left_join(d_c, by=c('territory','energy_cat')) %>%
     replace_na(list(
       cable2_km2 = 0,
       cable3_km2 = 0)) %>%
     mutate(
       cable2_pct     = cable2_km2 / area_km2 * 100,
-      cable3_pct     = cable3_km2 / area_km2 * 100,
-      pct_all        = area_km2 / sum(area_km2) * 100,
-      cable2_pct_all = cable2_km2 / sum(area_km2) * 100,
-      cable3_pct_all = cable3_km2 / sum(area_km2) * 100) %>%
+      cable3_pct     = cable3_km2 / area_km2 * 100) %>%
     mutate(
       energy_lbl = factor(energy_cat, levels(energy_cat), labels=c(sprintf('%d-%d', brks[1:3], brks[2:4]), '>1500')),
       energy_num = factor(energy_cat, levels(energy_cat), labels=brks[1:4]) %>% as.character() %>% as.integer()) %>%
     select(
-      territory, energy_num, energy_lbl, area_km2, pct_all,
-      cable2_km2, cable2_pct, cable2_pct_all, cable3_km2, cable3_pct, cable3_pct_all) %>%
-    arrange(region, energy_num)
+      territory, energy_num, energy_lbl, area_km2,
+      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
+    arrange(territory, energy_num)
   
+  # rbind territory=ALL
+  tide_cbls = tide_cbls %>%
+    bind_rows(
+      tide_cbls %>%
+        group_by(energy_num, energy_lbl) %>%
+        summarize(
+          area_km2   = sum(area_km2),
+          cable2_km2 = sum(cable2_km2),
+          cable3_km2 = sum(cable3_km2),
+          territory = 'ALL') %>%
+        mutate(
+          cable2_pct     = cable2_km2 / area_km2,
+          cable3_pct     = cable3_km2 / area_km2) %>%
+        ungroup()) 
+  
+  # write to csv
   tide_cbls %>% write_csv(tide_cbls_csv)
 }
 
@@ -229,11 +244,7 @@ if (!file.exists(wave_geo)){
       energy_cat = cut(ann_wef, c(0,10,20,30,52), include.lowest=T),
       energy_lbl = factor(energy_cat, levels(energy_cat), labels=c(sprintf('%d-%d', c(0,10,20), c(10,20,30)), '>30')),
       energy_num = factor(energy_cat, levels(energy_cat), labels=c(0,10,20,30)) %>% as.character() %>% as.integer())
-  # wave_sp = wave_sf %>% 
-  #   as('Spatial') %>%
-  #   spTransform(crs_gcs_w)
-  # bbox(wave_sp)
-  
+
   # transform lon from [-180,180] to [0,360]
   # [sf::st_transform not honoring +lon_wrap](https://github.com/edzer/sfr/issues/280)
   wave_sf = wave_sf %>%
@@ -250,7 +261,7 @@ if (!file.exists(wave_geo)){
     st_union()
     mutate(
       area_km2 = st_area(geometry) / (1000*1000))
-  
+      
   # write to geojson
   write_sf(wave_sum_sf, wave_geo, delete_dsn=T)
 }
@@ -303,15 +314,32 @@ if (!file.exists(wave_cbls_csv)){
       cable3_km2 = 0)) %>%
     mutate(
       cable2_pct     = cable2_km2 / area_km2,
-      cable3_pct     = cable3_km2 / area_km2,
-      pct_all        = area_km2 / sum(area_km2),
-      cable2_pct_all = cable2_km2 / sum(area_km2),
-      cable3_pct_all = cable3_km2 / sum(area_km2)) %>%
+      cable3_pct     = cable3_km2 / area_km2) %>%
     select(
       territory,
-      energy_num, energy_lbl, area_km2, pct_all,
-      cable2_km2, cable2_pct, cable2_pct_all, cable3_km2, cable3_pct, cable3_pct_all) %>%
+      energy_num, energy_lbl, area_km2,
+      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
     arrange(territory, energy_num) # View(wave_cbls)
+  
+  # quick fix: remove *pct_all columns
+  # read_csv(wave_cbls_csv) %>%
+  #   select(-pct_all, -cable2_pct_all, -cable3_pct_all) %>%
+  #   write_csv(wave_cbls_csv)
+  
+  # rbind territory=ALL
+  wave_cbls = wave_cbls %>%
+    bind_rows(
+      wave_cbls %>%
+        group_by(energy_num, energy_lbl) %>%
+        summarize(
+          area_km2   = sum(area_km2),
+          cable2_km2 = sum(cable2_km2),
+          cable3_km2 = sum(cable3_km2),
+          territory = 'ALL') %>%
+        mutate(
+          cable2_pct     = cable2_km2 / area_km2,
+          cable3_pct     = cable3_km2 / area_km2) %>%
+        ungroup()) 
   
   wave_cbls %>% write_csv(wave_cbls_csv)
 }
@@ -360,53 +388,85 @@ if (!file.exists(wind_geo)){
   
   # write to geojson
   wind %>% st_as_sf() %>% write_sf(wind_geo)
-}
-wind = read_sf(wind_geo) %>% as('Spatial')
-
-# wind: intersect with cables & dissolve on region & energy -----
-if (any(!file.exists(wind_cbl2_geo), !file.exists(wind_cbl3_geo))){
-  wind_cbl2 = raster::intersect(wind, cbl2) %>%
-    raster::aggregate(by=c('region','energy_lbl','energy_num'))
-  wind_cbl3 = raster::intersect(wind, cbl3) %>%
-    raster::aggregate(by=c('region','energy_lbl','energy_num'))
   
-  # calculate area
-  wind_cbl2$cable2_km2 = areaPolygon(wind_cbl2) / (1000*1000)
-  wind_cbl3$cable3_km2 = areaPolygon(wind_cbl3) / (1000*1000)
+  # read wind, transform from [-180,180] to [0,360]
+  wind = read_sf(wind_geo) %>%
+    mutate(geometry = (geometry + c(360,90)) %% c(360) - c(0,90)) %>% 
+    st_set_crs(crs_gcs_w)
+  
+  # intersect with regions, update area
+  wind = st_join(wind, usa_rgn_s %>% select(territory)) %>%
+    mutate(
+      area_km2 = st_area(geometry) / (1000*1000))
   
   # write to geojson
-  wind_cbl2 %>% st_as_sf() %>% write_sf(wind_cbl2_geo)
-  wind_cbl3 %>% st_as_sf() %>% write_sf(wind_cbl3_geo)
+  write_sf(wind, wind_geo, delete_dsn=T)
 }
-wind_cbl2 = read_sf(wind_cbl2_geo) %>% as('Spatial')
-wind_cbl3 = read_sf(wind_cbl3_geo) %>% as('Spatial')
+wind = read_sf(wind_geo)
+if (any(!st_is_valid(wind))) wind = st_buffer(wind, 0)
+
+# wind: intersect with cables & dissolve on region & energy -----
+if (any(!file.exists(wind_cbl2_geo), !file.exists(wind_cbl3_geo), redo)){
+  
+  wind_cbl2 = st_intersection(wind, cbl2_sf %>% select(-territory)) %>%
+    group_by(territory, energy_lbl, energy_num) %>%
+    summarise() %>% ungroup() %>%
+    mutate(
+      area_km2 = st_area(geometry) / (1000*1000)) %>%
+    arrange(territory, energy_num)
+  
+  wind_cbl3 = st_intersection(wind, cbl3_sf %>% select(-territory)) %>%
+    group_by(territory, energy_lbl, energy_num) %>%
+    summarise() %>% ungroup() %>%
+    mutate(
+      area_km2 = st_area(geometry) / (1000*1000)) %>%
+    arrange(territory, energy_num)
+  
+  # write to geojson
+  wind_cbl2 %>% write_sf(wind_cbl2_geo, delete_dsn=T)
+  wind_cbl3 %>% write_sf(wind_cbl3_geo, delete_dsn=T)
+}
+wind_cbl2 = read_sf(wind_cbl2_geo)
+wind_cbl3 = read_sf(wind_cbl3_geo)
 
 # wind: summarize by region & energy with cables into table -----
 if (!file.exists(wind_cbls_csv)){
   
-  wind_cbls = wind@data %>%
+  wind_cbls = wind %>% as_tibble() %>% select(-geometry) %>%
     left_join(
-      wind_cbl3@data,
-      by=c('region','energy_lbl','energy_num')) %>%
+      wind_cbl2 %>% as_tibble() %>% 
+        select(-geometry, cable2_km2=area_km2),
+      by=c('territory','energy_lbl','energy_num')) %>%
     left_join(
-      wind_cbl2@data,
-      by=c('region','energy_lbl','energy_num')) %>%
+      wind_cbl3 %>% as_tibble() %>% 
+        select(-geometry, cable3_km2=area_km2),
+      by=c('territory','energy_lbl','energy_num')) %>%
     replace_na(list(
       cable2_km2 = 0,
       cable3_km2 = 0)) %>%
     mutate(
-      cable2_pct = cable2_km2 / area_km2 * 100,
-      cable3_pct = cable3_km2 / area_km2 * 100) %>%
-    group_by(region) %>%
-    mutate(
-      pct_region        = area_km2 / sum(area_km2) * 100,
-      cable2_pct_region = cable2_km2 / sum(area_km2) * 100,
-      cable3_pct_region = cable3_km2 / sum(area_km2) * 100) %>%
-    ungroup() %>%
+      cable2_pct     = cable2_km2 / area_km2,
+      cable3_pct     = cable3_km2 / area_km2) %>%
     select(
-      region, energy_num, energy_lbl, area_km2, pct_region,
-      cable2_km2, cable2_pct, cable2_pct_region, cable3_km2, cable3_pct, cable3_pct_region) %>%
-    arrange(region, energy_num)
+      territory,
+      energy_num, energy_lbl, area_km2,
+      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
+    arrange(territory, energy_num) # View(wind_cbls)
+  
+  # rbind territory=ALL
+  wind_cbls = wind_cbls %>%
+    bind_rows(
+      wind_cbls %>%
+        group_by(energy_num, energy_lbl) %>%
+        summarize(
+          area_km2   = sum(area_km2),
+          cable2_km2 = sum(cable2_km2),
+          cable3_km2 = sum(cable3_km2),
+          territory = 'ALL') %>%
+        mutate(
+          cable2_pct     = cable2_km2 / area_km2,
+          cable3_pct     = cable3_km2 / area_km2) %>%
+        ungroup()) 
   
   wind_cbls %>% write_csv(wind_cbls_csv)
 }
