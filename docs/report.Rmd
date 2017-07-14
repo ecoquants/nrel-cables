@@ -168,23 +168,27 @@ read_csv('../data/data_sources.csv') %>%
 
 ## tbl_eez-usa
 
-```{r tblUSATerrritories}
+```{r tblUSATerrritories, eval=T}
 usa = read_sf(usa_rgn_s_geo)
 
-usa_tbl = usa %>%
+tbl = usa %>%
   as_tibble() %>%
-  select(territory, area_km2)
+  select(territory, area_km2) %>%
+    mutate(
+      area_km2   = accounting(area_km2, digits=0)) %>%
+    select(
+      Territory=territory, `Area (km2)`=area_km2)
 
-if (out_html){
-  usa_tbl %>%
-    datatable(options = list(pageLength=nrow(usa_tbl), dom='t')) %>%
-    formatCurrency(
-      c('area_km2'), 
-      currency = "", interval = 3, mark = ",", digits=1)
-} else {
-  usa_tbl %>%
-    kable(caption = 'Territories within the United States exclusive economic zone (EEZ).') # , booktabs=T)
-}
+tbl %>%
+  formattable(list(
+    `Area (km2)` = color_bar('lightgray'))) %>%
+  as.datatable(
+    rownames = F, 
+    caption  = 'Territories within the United States exclusive economic zone (EEZ).',
+    options  = list(
+      dom='t', # off: n_entries/search/paging/ordering
+      pageLength = nrow(tbl), ordering=F,
+      columnDefs = list(list(className='dt-right', targets=1))))
 ```
 
 ```{r mapStudyArea, fig.cap='Map of NOAA Charted Submarine cables in the United States as of December 2012.'}
@@ -444,7 +448,7 @@ wind = read_sf(wind_geo)
 ```
 
 
-```{r tblWind, eval=T}
+```{r tblWind}
 fmt_tbl(
   csv=wind_cbls_csv, energy_hdr='Wind Speed (m/s)',
   caption='Constraints of cable (minimum - recommended) categories of wind speed (m/s) at 90m hub height.')
@@ -502,7 +506,7 @@ leaflet(wave %>% filter(territory=='East')) %>%
 ```
 
 
-```{r tblWave, eval=T}
+```{r tblWave}
 fmt_tbl(
   csv=tide_cbls_csv, energy_hdr='Wave Energy (kW/m)',
   caption='Constraints of cable (minimum - recommended) categories of wave energy (m/s) at 90m hub height.')
@@ -561,27 +565,21 @@ leaflet() %>%
 ```
 
 
-```{r tblTide, eval=T}
+```{r tblTide}
 fmt_tbl(
-  csv=tide_cbls_csv, energy_hdr='Tidal Power (W/m2)',
-  caption='Constraints of cable (minimum - recommended) categories of tidal energy (W/m2) at 90m hub height.')
+  csv        = tide_cbls_csv, 
+  energy_hdr = 'Tidal Power (W/m2)',
+  caption    = 'Constraints of cable (minimum - recommended) categories of tidal 
+  energy (W/m2) at 90m hub height.')
 ```
 
 ```{r pltTide}
-p = plot_cbls(
+plot_cbls(
   csv   = tide_cbls_csv, 
   title = 'Tidal Energy by Area and Power Class per US Territory',
   xlab  = 'Tidal power (W/m2)',
   legend_position      = c(1,1),
   legend_justification = c(1,1))
-p
-
-if (out_html){
-  #p %>% ggplotly()
-  p %>% print()
-} else {
-  p %>% print()
-}
 ```
 
 
