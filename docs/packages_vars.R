@@ -3,7 +3,7 @@ packages = c(
   # general data science
   'tidyverse','stringr',
   # dynamic document creation
-  'knitr','rmarkdown','bookdown','DT','htmltools',
+  'knitr','rmarkdown','bookdown','DT','htmltools','formattable',
   # plotting & mapping
   'RColorBrewer','viridis','scales','tidyverse/ggplot2','ropensci/plotly','maps','albersusa','mapproj','wch/webshot','geojsonio','rmapshaper', # ,'plotKML'
   # [mapedit](ttp://r-spatial.org/r/2017/01/30/mapedit_intro.html)
@@ -25,7 +25,8 @@ for (pkg in packages){ # pkg= packages[1] # pkg = 'r-spatial/mapview@develop' # 
   }
 }
 # override functions with duplicate names in different packages
-select = dplyr::select
+select  = dplyr::select
+percent = formattable::percent
 
 # variables & paths ----
 d_incr = 100 # depth increment

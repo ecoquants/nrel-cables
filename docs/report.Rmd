@@ -35,6 +35,109 @@ if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_k
   out_html = F
   opts_chunk$set(echo=F)
 }
+
+fmt_tbl = function(csv, energy_hdr, caption){
+
+  d = read_csv(csv) %>%
+    filter(
+      territory != 'ALL',
+      !is.na(territory))
+  
+  hdr = htmltools::withTags(table(
+    class = 'display',
+    thead(
+      tr(
+        th(rowspan=2, 'Territory'),
+        th(rowspan=2, energy_hdr),
+        th(rowspan=2, 'Area (km2)'),
+        th(colspan=2, 'Min. Cable (2x)'),
+        th(colspan=2, 'Rec. Cable (3x)')),
+      tr(
+        th('Area (km2)'),
+        th('(%)'),
+        th('Area (km2)'),
+        th('(%)')))))
+  
+  d %>%
+    mutate(
+      energy     = factor(energy_num, unique(energy_num), unique(energy_lbl)),
+      area_km2   = accounting(area_km2, digits=0),
+      cable2_km2 = accounting(cable2_km2, digits=0),
+      cable3_km2 = accounting(cable3_km2, digits=0),
+      cable2_pct = percent(cable2_pct, digits=1),
+      cable3_pct = percent(cable3_pct, digits=1)) %>%
+    select(
+      territory, energy, area_km2,
+      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
+    formattable(
+      list(
+        energy     = color_bar('lightblue'),
+        area_km2   = color_bar('lightgray'),
+        cable2_km2 = color_bar('lightpink'),
+        cable3_km2 = color_bar('lightgreen'))) %>%
+    as.datatable(
+      rownames=F, container=hdr, caption=caption,
+      options = list(
+        dom='t', # off: n_entries/search/paging/ordering
+        pageLength = nrow(tbl), ordering=F,
+        columnDefs = list(list(className='dt-right', targets=1:5))))
+}
+
+plot_cbls = function(
+  csv   = wave_cbls_csv, 
+  title = 'Wave Energy by Area and Power Class per US Territory',
+  xlab  = 'Wave energy (kW/m)',
+  legend_position      = c(1,0),
+  legend_justification = c(1,0)){ 
+  
+  energy_cbls = read_csv(csv) %>%
+    filter(
+      !is.na(territory),
+      territory != 'ALL') %>%
+    mutate(
+      energy = factor(energy_lbl, unique(energy_lbl), ordered=T),
+      pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
+  
+  cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Remainder')
+  
+  d_p = energy_cbls %>%
+    mutate(
+      min_2d = cable2_km2,
+      rec_3d = cable3_km2 - cable2_km2,
+      rem    = area_km2 - cable3_km2) %>%
+    select(
+      territory, energy, min_2d, rec_3d, rem) %>%
+    gather(type, km2, -energy, -territory) %>%
+    mutate(
+      type = factor(
+        type,
+        names(cable_ord),
+       cable_ord, ordered=T)) %>%
+    arrange(territory, energy, type)
+  
+  txt_adj = energy_cbls %>% 
+    summarize(txt_adj = max(area_km2)/1000*0.025) %>% 
+    .$txt_adj
+  
+  p = ggplot(
+      data=d_p,
+      aes(x = energy, y = km2/1000, fill=type)) +
+    geom_col() +
+    geom_text(
+      data=energy_cbls, 
+      aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
+      position = position_nudge(y = txt_adj), size=2) +
+    labs(
+      title=title, 
+      subtitle='with Cable Overlay (Minimum - Recommended %)', 
+      x=xlab, y='Area (1,000 km^2)', fill='Type') +
+    theme(
+      legend.justification = legend_justification, 
+      legend.position      = legend_position,
+      axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    facet_wrap(~territory) # facet_wrap(~territory, scales='free_y') # facet_grid(. ~ territory)
+  p
+}
 ```
 
 # Background
@@ -258,9 +361,73 @@ Google Earth files (*.kml):
 
 - [lns_d1x.kml](https://github.com/ecoquants/nrel-cables/raw/master/data/lns_d1x.kml)
 
-## Overlay with Renewable Energy from NREL
+## Overlap with Renewable Energy
 
 Extract average and area of overlap between zones and renewable energy potential areas, possibly at various depth bins.
+
+```{r pltEnergy}
+read_cbls = function(csv, form){
+  read_csv(csv) %>%
+    filter(
+      territory == 'ALL') %>%
+    mutate(
+      form    = form,
+      #energy  = factor(energy_lbl, unique(energy_lbl), ordered=T),
+      pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
+}
+
+d = map2(
+  c(wind_cbls_csv, wave_cbls_csv, tide_cbls_csv), 
+  c('wind','wave','tide'), 
+  read_cbls) %>%
+  bind_rows() %>%
+  mutate(
+    energy = factor(
+      x      = sprintf('%s_%04d', form, energy_num), 
+      levels = sprintf('%s_%04d', form, energy_num), 
+      label  = energy_lbl, ordered=T))
+
+cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Remainder')
+  
+d_p = d %>%
+  mutate(
+    min_2d = cable2_km2,
+    rec_3d = cable3_km2 - cable2_km2,
+    rem    = area_km2 - cable3_km2) %>%
+  select(
+    form, energy, min_2d, rec_3d, rem) %>%
+  gather(type, km2, -energy, -form) %>%
+  mutate(
+    type = factor(
+      type,
+      names(cable_ord),
+      cable_ord, ordered=T)) %>%
+  arrange(form, energy, type)
+
+txt_adj = energy_cbls %>% 
+  summarize(txt_adj = max(area_km2)/1000*0.025) %>% 
+  .$txt_adj
+
+p = ggplot(
+  data=d_p,
+  aes(x = energy, y = km2/1000, fill=type)) +
+  geom_col() +
+  geom_text(
+    data=d, 
+    aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
+    position = position_nudge(y = txt_adj), size=2) +
+  labs(
+    title    = 'Energy by Area and Power Class per US Territory', 
+    subtitle = 'with Cable Overlay (Minimum - Recommended %)', 
+    x='Energy', y='Area (1,000 km^2)', fill='Type') +
+  theme(
+    legend.justification = c(1,1), 
+    legend.position      = c(1,1),
+    axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  facet_wrap(~form, scales='free_x')
+p
+```
+
 
 ### Wind
 
@@ -278,97 +445,25 @@ wind = read_sf(wind_geo)
 
 
 ```{r tblWind, eval=T}
-wind_cbls = read_csv(wind_cbls_csv)
+fmt_tbl(
+  csv=wind_cbls_csv, energy_hdr='Wind Speed (m/s)',
+  caption='Constraints of cable (minimum - recommended) categories of wind speed (m/s) at 90m hub height.')
+```
 
-wind_tbl = wind_cbls %>%
-  select(-energy_num) %>%
-  rename(`speed m/s`=energy_lbl) %>%
-  mutate(
-   pct_region         = pct_region/100,
-   cable2_pct         = cable2_pct/100,
-   cable2_pct_region  = cable2_pct_region/100,
-   cable3_pct         = cable3_pct/100,
-   cable3_pct_region  = cable3_pct_region/100) 
-
-wind_tbl_fmt = wind_tbl %>%
-  mutate(
-   # pct_region         = percent(pct_region),
-   # cable2_pct         = percent(cable2_pct),
-   # cable2_pct_region  = percent(cable2_pct_region),
-   # cable3_pct         = percent(cable3_pct),
-   # cable3_pct_region  = percent(cable3_pct_region),
-   area_km2           = area_km2   %>% round(digits=1) %>% comma(),
-   cable2_km2         = cable2_km2 %>% round(digits=1) %>% comma(),
-   cable3_km2         = cable3_km2 %>% round(digits=1) %>% comma()) %>%
-  mutate(
-    `Cable (km^2)` = sprintf('%s - %s', cable2_km2, cable3_km2),
-    `Cable (%)`   = sprintf('%0.2f - %0.2f%%', cable2_pct, cable3_pct)) %>%
-  select(Region=region, `Speed m/s`=`speed m/s`, `Cable (km^2)`, `Cable (%)`, `Region (km^2)`=area_km2)
-  # rename(
-  #   rgn = region,
-  #   rgn_km2      = area_km2,
-  #   pct_rgn      = pct_region,
-  #   cbl2_km2     = cable2_km2,
-  #   cbl2_pct     = cable2_pct,
-  #   cbl2_pct_rgn = cable2_pct_region,
-  #   cbl3_km2     = cable3_km2,
-  #   cbl3_pct     = cable3_pct,
-  #   cbl3_pct_rgn = cable3_pct_region) %>%
-  # select(rgn, `speed m/s`, rgn_km2, cbl2_km2, cbl2_pct, cbl2_pct_rgn, cbl3_km2, cbl3_pct, cbl3_pct_rgn)
-
-# TODO: apply formatting for easy table viz -- split up columns
-
-library(formattable)
-
-products <- data.frame(id = 1:5, 
-  price        = c(10, 15, 12, 8, 9),
-  rating       = c(5, 4, 4, 3, 4),
-  market_share = percent(c(0.1, 0.12, 0.05, 0.03, 0.14)),
-  revenue      = accounting(c(55000, 36400, 12000, -25000, 98100)),
-  profit       = accounting(c(25300, 11500, -8200, -46000, 65000)),
-  registered   = c(T, F, T, F, T))
-
-sign_formatter <- formatter("span", 
-  style = x ~ style(color = ifelse(x > 0, "green", 
-    ifelse(x < 0, "red", "black"))))
-
-tbl = formattable(
-    products, 
-    list(
-      price = color_tile("transparent", "lightpink"),
-      rating = color_bar("lightgreen"),
-      market_share = color_bar("lightblue"),
-      revenue = sign_formatter,
-      profit = sign_formatter,
-      registered = formatter(
-        "span",
-        style = x ~ style(color = ifelse(x, "green", "red")),
-        x ~ icontext(ifelse(x, "ok", "remove"), ifelse(x, "Yes", "No")))))
-
-# as.datatable(
-#   tbl, 
-#   rownames = F,
-#   options = list(
-#     pageLength = nrow(tbl), dom='t', ordering=F, # all rows, off: n_entries/search/paging/ordering
-#     columnDefs = list(list(className = 'dt-right', targets = 0:5))))
+```{r pltWind}
+p = plot_cbls(
+  csv   = wind_cbls_csv, 
+  title = 'Wind Energy by Area and Power Class per US Territory',
+  xlab  = 'Wind speed (m/s)',
+  legend_position      = c(0,0.47),
+  legend_justification = c(0,1))
+p
 
 if (out_html){
-  wind_tbl %>%
-    datatable() %>%
-    formatCurrency(
-      c('area_km2','cable2_km2','cable3_km2'),
-      currency = "", interval = 3, mark = ",", digits=1) %>%
-    #formatRound(
-    #  c('area_km2','cable2_km2','cable3_km2'),
-    #  digits=2) %>%
-    formatPercentage(
-      c('pct_region','cable2_pct','cable2_pct_region','cable3_pct','cable3_pct_region'),
-      digits=1)
+  #p %>% ggplotly()
+  p %>% print()
 } else {
-  wind_tbl_fmt %>%
-    kable(
-      align=c('l', 'c', 'c', 'c', 'r'),
-      caption = 'Constraints of cable (minimum - recommended) categories of wind speed (m/s) at 90m hub height.') # , booktabs=T)
+  p %>% print()
 }
 ```
 
@@ -407,23 +502,10 @@ leaflet(wave %>% filter(territory=='East')) %>%
 ```
 
 
-```{r tblWave}
-# TODO: rm /100 from pct_* in *.R
-wave_cbls = read_csv(wave_cbls_csv) %>%
-  rename(`Wave energy (kW/m)`=energy_lbl) %>%
-  mutate(
-   cable2_pct     = cable2_pct,
-   cable3_pct     = cable3_pct)
-
-wave_cbls %>%
-  select(-energy_num) %>%
-  datatable() %>%
-  formatCurrency(
-      c('area_km2','cable2_km2','cable3_km2'), 
-      currency = "", interval = 3, mark = ",", digits=1) %>%
-  formatPercentage(
-    c('cable2_pct','cable3_pct'),
-    digits=1)
+```{r tblWave, eval=T}
+fmt_tbl(
+  csv=tide_cbls_csv, energy_hdr='Wave Energy (kW/m)',
+  caption='Constraints of cable (minimum - recommended) categories of wave energy (m/s) at 90m hub height.')
 ```
 
 - [plotly - stacked bar chart](https://plot.ly/r/bar-charts/#stacked-bar-chart)
@@ -431,70 +513,21 @@ wave_cbls %>%
 - [plotly - percentages bar chart](https://plot.ly/ggplot2/geom_bar/#precentages)
 
 ```{r pltWave}
-wave_cbls = read_csv(wave_cbls_csv) %>%
-  filter(!is.na(territory)) %>%
-  mutate(
-    energy = factor(energy_lbl, unique(energy_lbl), ordered=T),
-    pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
-  
-cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Remainder')
+p = plot_cbls(
+  csv   = wave_cbls_csv, 
+  title = 'Wave Energy by Area and Power Class per US Territory',
+  xlab  = 'Wave energy (kW/m)')
 
-d_p = wave_cbls %>%
-  mutate(
-    min_2d = cable2_km2,
-    rec_3d = cable3_km2 - cable2_km2,
-    rem    = area_km2 - cable3_km2) %>%
-  select(
-    territory, energy, min_2d, rec_3d, rem) %>%
-  gather(type, km2, -energy, -territory) %>%
-  mutate(
-    type = factor(
-      type,
-      names(cable_ord),
-     cable_ord, ordered=T)) %>%
-  arrange(territory, energy, type)
-
-plot_wave = function(ter){ # ter = setdiff(unique(d_p$territory), 'ALL') 
-  # ter = unique(d_p$territory) # ter = 'ALL'
-  txt_adj = wave_cbls %>% 
-    filter(territory %in% ter) %>% 
-    summarize(txt_adj = max(area_km2)/1000*0.025) %>% 
-    .$txt_adj
-  
-  p = ggplot(
-      data=d_p %>% filter(territory %in% ter), 
-      #data=d_p, 
-      aes(x = energy, y = km2/1000, fill=type)) +
-    geom_col() +
-    geom_text(
-      data=wave_cbls %>% filter(territory %in% ter), 
-      #data=wave_cbls, 
-      aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
-      position = position_nudge(y = txt_adj), size=2) +
-    labs(
-      #title=sprintf('%s: Wave Energy by Area and Power Class', ter), 
-      title=sprintf('Wave Energy by Area and Power Class per US Territory'), 
-      subtitle='with Cable Overlay (Minimum - Recommended %)', 
-      x='Wave energy (kW/m)', y='Area (1,000 km^2)', fill='Type') +
-    theme(
-      legend.justification=c(1,0), legend.position=c(1,0),
-      axis.text.x = element_text(angle = 90, hjust = 1)) + 
-    #facet_grid(. ~ territory)
-    #facet_wrap(~territory, scales='free_y')
-    facet_wrap(~territory)
-  p
-  
-}
-plot_wave('ALL') %>% print()
-plot_wave('ALL') %>% ggplotly()
-
-plot_list = lapply(unique(d_p$territory), plot_wave)
-
+#plot_list = lapply(unique(d_p$territory), plot_wave)
 if (out_html){
-  htmltools::tagList(lapply(plot_list, ggplotly))
+  #htmltools::tagList(lapply(plot_list, ggplotly))
   # individual: plot_wave('ALL') %>% ggplotly()
+  
+  #p %>% ggplotly()
+  p %>% print()
 } else {
-  invisible(lapply(plot_list, print))
+  #invisible(lapply(plot_list, print))
+  p %>% print()
 }
 ```
 
@@ -528,25 +561,29 @@ leaflet() %>%
 ```
 
 
-```{r tblTide}
-tide_cbls = read_csv(tide_cbls_csv)
-
-tide_cbls %>%
-  select(-energy_num) %>%
-  rename(`power W/m2`=energy_lbl) %>%
-  mutate(
-   pct_all        = pct_all/100,
-   cable2_pct     = cable2_pct/100,
-   cable3_pct     = cable3_pct/100,
-   cable3_pct_all = cable3_pct_all/100) %>%
-  datatable() %>%
-  formatCurrency(
-      c('area_km2','cable2_km2','cable3_km2'), 
-      currency = "", interval = 3, mark = ",", digits=1) %>%
-  formatPercentage(
-    c('pct_all','cable2_pct','cable2_pct_all','cable3_pct','cable3_pct_all'),
-    digits=1)
+```{r tblTide, eval=T}
+fmt_tbl(
+  csv=tide_cbls_csv, energy_hdr='Tidal Power (W/m2)',
+  caption='Constraints of cable (minimum - recommended) categories of tidal energy (W/m2) at 90m hub height.')
 ```
+
+```{r pltTide}
+p = plot_cbls(
+  csv   = tide_cbls_csv, 
+  title = 'Tidal Energy by Area and Power Class per US Territory',
+  xlab  = 'Tidal power (W/m2)',
+  legend_position      = c(1,1),
+  legend_justification = c(1,1))
+p
+
+if (out_html){
+  #p %>% ggplotly()
+  p %>% print()
+} else {
+  p %>% print()
+}
+```
+
 
 ## Next Steps
 
