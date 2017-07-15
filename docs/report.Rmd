@@ -36,6 +36,49 @@ if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_k
   opts_chunk$set(echo=F)
 }
 
+# webshot hack ----
+knitr::opts_chunk$set(tidy = FALSE)
+
+# Default image paths
+fig_path <- local({
+  i <- 0
+  path <- knitr::opts_chunk$get('fig.path')
+  function() {
+    i <<- i + 1
+    paste0(path, 'webshot', i, '.png')
+  }
+})
+
+# A hack to automatically include the webshot output as images in R Markdown
+shot <- function(..., file = fig_path(), FUN) {
+  opts <- knitr::opts_current$get()
+  
+  browser()
+  if (is.null(opts$vwidth))
+    vwidth <- 992
+  else
+    vwidth <- opts$fig.width * opts$dpi
+
+  if (is.null(opts$vheight))
+    vheight <- 744
+  else
+    vheight <- opts$fig.height * opts$dpi
+
+  tryCatch({
+    filepath <- FUN(..., file = file, vwidth = vwidth, vheight = vheight)
+    if (is.null(filepath)) {
+      return(invisible())
+    }
+
+    knitr::include_graphics(filepath)
+  },
+  error = function(e) {
+    invisible()
+  })
+}
+webshot <- function(...) shot(..., FUN = webshot::webshot)
+appshot <- function(...) shot(..., FUN = webshot::appshot)
+
 fmt_tbl = function(csv, energy_hdr, caption){
 
   d = read_csv(csv) %>%
@@ -57,9 +100,10 @@ fmt_tbl = function(csv, energy_hdr, caption){
         th('(%)'),
         th('Area (km2)'),
         th('(%)')))))
-  
+
   d %>%
     mutate(
+      territory  = ifelse(duplicated(territory), '', territory),
       energy     = factor(energy_num, unique(energy_num), unique(energy_lbl)),
       area_km2   = accounting(area_km2, digits=0),
       cable2_km2 = accounting(cable2_km2, digits=0),
@@ -82,6 +126,10 @@ fmt_tbl = function(csv, energy_hdr, caption){
         pageLength = nrow(tbl), ordering=F,
         columnDefs = list(list(className='dt-right', targets=1:5))))
 }
+
+dx2     = read_sf(dx2_geo)
+dx3     = read_sf(dx3_geo)
+lns_d1x = read_sf(lns_d1x_rgn_geo)
 
 plot_cbls = function(
   csv   = wave_cbls_csv, 
@@ -168,7 +216,7 @@ read_csv('../data/data_sources.csv') %>%
 
 ## tbl_eez-usa
 
-```{r tblUSATerrritories, eval=T}
+```{r tblUSATerrritories}
 usa = read_sf(usa_rgn_s_geo)
 
 tbl = usa %>%
@@ -219,21 +267,6 @@ if (out_html){
   webshot(m_html, file=m_png, cliprect="viewport")
 }
 ```
-
-TODO:
-
-* [python - Shapely polygons crossing the antimeridian - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/226605/shapely-polygons-crossing-the-antimeridian)
-* [r - Use different center than the prime meridian in plotting a world map - Stack Overflow](https://stackoverflow.com/questions/10620862/use-different-center-than-the-prime-meridian-in-plotting-a-world-map)
-* [ogr - How to change shapefile longitude from -180 - 180 to 0 - 360? - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/79447/how-to-change-shapefile-longitude-from-180-180-to-0-360)
-* [sf::st_transform not honoring +lon_wrap · Issue #280 · edzer/sfr](https://github.com/edzer/sfr/issues/280)
-* [Moving The Earth (well, Alaska & Hawaii) With R | rud.is](https://rud.is/b/2014/11/16/moving-the-earth-well-alaska-hawaii-with-r/)
-* [Administrative Maps and Projections in R - AriLamstein.com](https://www.arilamstein.com/blog/2015/07/23/administrative-level-1-maps-and-projections/)
-* [Mapping Data in R · Adam Olson](http://adamolson.org/2015/07/15/post_about_maps/)
-* [Mapping All Fifty U.S. States](https://cran.r-project.org/web/packages/fiftystater/vignettes/fiftystater.html)
-* [fiftystater/make_mapfile.R at master · wmurphyrd/fiftystater](https://github.com/wmurphyrd/fiftystater/blob/master/data-raw/make_mapfile.R)
-* [Mapping All Fifty U.S. States](https://cran.r-project.org/web/packages/fiftystater/vignettes/fiftystater.html)
-* [r - Relocating Alaska and Hawaii on thematic map of the USA with ggplot2 - Stack Overflow](https://stackoverflow.com/questions/13757771/relocating-alaska-and-hawaii-on-thematic-map-of-the-usa-with-ggplot2/13767984#13767984)
-* [ohiprep/model_create_regions.py at 66bcf4e39b63b154437dda55aec6ed825ac47f05 · OHI-Science/ohiprep](https://github.com/OHI-Science/ohiprep/blob/66bcf4e39b63b154437dda55aec6ed825ac47f05/globalprep/spatial/NCEAS-Regions_v2014/model_create_regions.py)
 
 ## Depth
 
@@ -313,43 +346,47 @@ cable_buf = simplify(cable_buf)
 
 A depth-varying buffer to the offshore cables, 2 \* depth for "minimum" and 3 \* depth for "recommended" separation zones for routing new cables, by first intersecting depth with cables, then iterating over each depth to apply the appropriate buffers before finally dissolving all buffers. In order to apply the buffer, I needed to project from geographic coordinates to a projection that minimizes area distortion, so chose Albers Equal Area and applied the ["one-sixth rule"]( http://desktop.arcgis.com/en/arcmap/latest/map/projections/albers-equal-area-conic.htm#GUID-2158C4F9-F197-458E-94F0-84933C1BE6B7) based on the extent of the cable features to minimize distortion.
 
-```{r mapCableBuffs}
-dx2     = read_sf(dx2_geo)
-dx3     = read_sf(dx3_geo)
-lns_d1x = read_sf(lns_d1x_rgn_geo)
-
-m = leaflet() %>%
-  addProviderTiles("Stamen.TonerLite", group = "B&W") %>%
-  addProviderTiles('Esri.OceanBasemap', group = "Ocean") %>%  #
-  addPolygons(
-    data = dx2, group='buffer: 2*depth',
-    color='red', stroke=F, fillOpacity = 0.5) %>%
-  addPolygons(
-    data = dx3, group='buffer: 3*depth',
-    color='red', stroke=F, fillOpacity = 0.5) %>%
-  addPolylines(
-    data = lns_d1x, group='cables',
-    color='black', opacity = 1, weight=1,
-    popup = ~sprintf(
-      "scaleBand: %s<br>description: %s<br>effectiveDate: %s<br>Territory: %s<br>Buffer (1x): %d",
-      scaleBand, description, effectiveDate, territory, buf1x)) %>%
-  addLayersControl(
-    baseGroups = c("B&W", "Ocean"),
-    overlayGroups = c('buffer: 3*depth', 'buffer: 2*depth', 'cables'),
-    options = layersControlOptions(collapsed = FALSE))
-
-if (out_html){
-  m
-} else {
-  # [How to save Leaflet in R map as png or jpg file? - Stack Overflow](https://stackoverflow.com/questions/31336898/how-to-save-leaflet-in-r-map-as-png-or-jpg-file)
-  m_html = '../tmp/mapCableBuffs.html'
-  m_png  = '../tmp/mapCableBuffs.png'
-  saveWidget(m, m_html, selfcontained=F)
-  webshot(m_html, file=m_png, cliprect="viewport")
-}
-```
-
 # Results
+
+## Cable Buffer
+
+```{r mapCableBuffs, eval=T}
+
+map_cbls = function(){
+  # TODO: basemap arg
+  
+  m = leaflet() %>%
+    addProviderTiles("Stamen.TonerLite", group = "B&W") %>%
+    addProviderTiles('Esri.OceanBasemap', group = "Ocean") %>%  #
+    addPolygons(
+      data = dx2, group='Min. Cable (2x)',
+      color='red', stroke=F, fillOpacity = 0.5) %>%
+    addPolygons(
+      data = dx3, group='Rec. Cable (3x)',
+      color='red', stroke=F, fillOpacity = 0.5) %>%
+    addPolylines(
+      data = lns_d1x, group='Cables',
+      color='black', opacity = 1, weight=1,
+      popup = ~sprintf(
+        "scaleBand: %s<br>description: %s<br>effectiveDate: %s<br>Territory: %s<br>Buffer (1x): %d",
+        scaleBand, description, effectiveDate, territory, buf1x)) %>%
+    addLayersControl(
+      baseGroups = c("B&W", "Ocean"),
+      overlayGroups = c('Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
+      options = layersControlOptions(collapsed = FALSE))
+  
+  if (out_html){
+    m
+  } else {
+    # [How to save Leaflet in R map as png or jpg file? - Stack Overflow](https://stackoverflow.com/questions/31336898/how-to-save-leaflet-in-r-map-as-png-or-jpg-file)
+    m_html = '../tmp/mapCableBuffs.html'
+    m_png  = '../tmp/mapCableBuffs.png'
+    saveWidget(m, m_html, selfcontained=F)
+    webshot(m_html, cliprect="viewport")
+  }
+}
+map_cbls()
+```
 
 Generated by:
 
@@ -365,7 +402,7 @@ Google Earth files (*.kml):
 
 - [lns_d1x.kml](https://github.com/ecoquants/nrel-cables/raw/master/data/lns_d1x.kml)
 
-## Overlap with Renewable Energy
+## Overlap of Cable Buffer with Renewable Energy
 
 Extract average and area of overlap between zones and renewable energy potential areas, possibly at various depth bins.
 
@@ -380,7 +417,7 @@ read_cbls = function(csv, form){
       pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
 }
 
-d = map2(
+tbl_form_cbls = map2(
   c(wind_cbls_csv, wave_cbls_csv, tide_cbls_csv), 
   c('wind','wave','tide'), 
   read_cbls) %>%
@@ -393,7 +430,7 @@ d = map2(
 
 cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Remainder')
   
-d_p = d %>%
+d_p = tbl_form_cbls %>%
   mutate(
     min_2d = cable2_km2,
     rec_3d = cable3_km2 - cable2_km2,
@@ -417,7 +454,7 @@ p = ggplot(
   aes(x = energy, y = km2/1000, fill=type)) +
   geom_col() +
   geom_text(
-    data=d, 
+    data=tbl_form_cbls, 
     aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
     position = position_nudge(y = txt_adj), size=2) +
   labs(
@@ -432,6 +469,70 @@ p = ggplot(
 p
 ```
 
+```{r tblEnergy}
+d = tbl_form_cbls
+energy_hdr = 'Amount'
+caption = 'Area overlap with cables by form of energy broken into size classes across all territories.'
+
+# update energy column for proportion in color_box
+e_lbls = c(
+    '<=7','7-8',  '8-9','9-10','10-11','11-12', #  1:6
+   '0-10',   '10-20',    '20-30',  '>30',       #  7:10
+  '0-500','500-1000','1000-1500','>1500')       # 11:14
+e_idx = c(1,7,11, 2,8,12, 3, 4,9,13, 5,10,14, 6)
+e_lkup = setNames(e_idx, 1:14)
+d = d %>% 
+  mutate(
+    form = ifelse(
+      duplicated(form), '',       c(
+        'tide'='Tidal Power (W/m2)',
+        'wave'='Wave Energy (kW/m)',
+        'wind'='Wind Speed (m/s)')[d$form]),
+    energy = factor(
+      x = e_lkup %>% sort() %>% names %>% as.integer,
+      levels = 1:14,
+      labels = e_lbls[e_idx],
+      ordered=T),
+    area_km2   = accounting(area_km2, digits=0),
+    cable2_km2 = accounting(cable2_km2, digits=0),
+    cable3_km2 = accounting(cable3_km2, digits=0),
+    cable2_pct = percent(cable2_pct, digits=1),
+    cable3_pct = percent(cable3_pct, digits=1)) %>%
+  select(
+    form, energy, area_km2,
+    cable2_km2, cable2_pct, cable3_km2, cable3_pct)
+
+hdr = htmltools::withTags(table(
+  class = 'display',
+  thead(
+    tr(
+      th(colspan=2, 'Energy'),
+      th(rowspan=2, 'Area (km2)'),
+      th(colspan=2, 'Min. Cable (2x)'),
+      th(colspan=2, 'Rec. Cable (3x)')),
+    tr(
+      th('Form'),
+      th('Amount'),
+      th('Area (km2)'),
+      th('(%)'),
+      th('Area (km2)'),
+      th('(%)')))))
+
+d %>%
+  formattable(
+    list(
+      energy     = color_bar('lightblue'),
+      area_km2   = color_bar('lightgray'),
+      cable2_km2 = color_bar('lightpink'),
+      cable3_km2 = color_bar('lightgreen'))) %>%
+  as.datatable(
+    rownames=F, container=hdr, 
+    caption = caption,
+    options = list(
+      dom='t', # off: n_entries/search/paging/ordering
+      pageLength = nrow(tbl), ordering=F,
+      columnDefs = list(list(className='dt-right', targets=1:5))))
+```
 
 ### Wind
 
@@ -447,7 +548,6 @@ wind = read_sf(wind_geo)
 #   spplot(.[''])
 ```
 
-
 ```{r tblWind}
 fmt_tbl(
   csv=wind_cbls_csv, energy_hdr='Wind Speed (m/s)',
@@ -455,20 +555,12 @@ fmt_tbl(
 ```
 
 ```{r pltWind}
-p = plot_cbls(
+plot_cbls(
   csv   = wind_cbls_csv, 
   title = 'Wind Energy by Area and Power Class per US Territory',
   xlab  = 'Wind speed (m/s)',
   legend_position      = c(0,0.47),
   legend_justification = c(0,1))
-p
-
-if (out_html){
-  #p %>% ggplotly()
-  p %>% print()
-} else {
-  p %>% print()
-}
 ```
 
 ### Wave
