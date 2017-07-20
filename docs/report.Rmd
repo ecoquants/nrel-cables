@@ -49,6 +49,15 @@ fmt_tbl = function(csv, energy_hdr, caption){
       territory != 'ALL',
       !is.na(territory))
   
+  # correct for odd flipping from using className='dt-right'
+  d = d %>%
+    mutate(
+      energy_lbl = recode(
+        energy_lbl, 
+        `<=7`='7=>',
+        `>30`='30<',
+        `>1500`='1500<'))
+  
   hdr = htmltools::withTags(table(
     class = 'display',
     thead(
@@ -657,9 +666,9 @@ caption = 'Table 2: Area overlap with cables by form of energy broken into size 
 
 # update energy column for proportion in color_box
 e_lbls = c(
-    '<=7','7-8',  '8-9','9-10','10-11','11-12', #  1:6
-   '0-10',   '10-20',    '20-30',  '>30',       #  7:10
-  '0-500','500-1000','1000-1500','>1500')       # 11:14
+    '7=>','7-8',  '8-9','9-10','10-11','11-12', #  1:6
+   '0-10',   '10-20',    '20-30',  '30<',       #  7:10
+  '0-500','500-1000','1000-1500','1500<')       # 11:14
 e_idx = c(1,7,11, 2,8,12, 3, 4,9,13, 5,10,14, 6) # setdiff(1:length(e_lbls), e_idx) 
 e_lkup = setNames(e_idx, 1:14)
 d = d %>% 
@@ -715,6 +724,24 @@ d %>%
       columnDefs = list(list(className='dt-right', targets=1:5))))
 ```
 
+### Wave
+
+units: wave energy flux (kW/m)
+
+```{r pltWave, fig.cap='Wave energy (kW/m) and area per US territory with cable overlay (minimum - recommended %).'}
+plot_cbls(
+  csv   = wave_cbls_csv,
+  #title = 'Wave Energy by Area and Power Class per US Territory',
+  xlab  = 'Wave energy (kW/m)')
+```
+
+```{r tblWave}
+fmt_tbl(
+  csv        = wave_cbls_csv, 
+  energy_hdr = 'Wave Energy (kW/m)',
+  caption    = 'Table 4: Area overlap with cables for wave energy (kW/m) by territory.')
+```
+
 ### Wind
 
 units: wind speed (m/s) at 90m hub height
@@ -734,24 +761,6 @@ plot_cbls(
 fmt_tbl(
   csv=wind_cbls_csv, energy_hdr='Wind Speed (m/s)',
   caption='Table 3: Area overlap with cables for wind speed (m/s) at 90m hub height by territory.')
-```
-
-### Wave
-
-units: wave energy flux (kW/m)
-
-```{r pltWave, fig.cap='Wave energy (kW/m) and area per US territory with cable overlay (minimum - recommended %).'}
-plot_cbls(
-  csv   = wave_cbls_csv,
-  #title = 'Wave Energy by Area and Power Class per US Territory',
-  xlab  = 'Wave energy (kW/m)')
-```
-
-```{r tblWave}
-fmt_tbl(
-  csv        = wave_cbls_csv, 
-  energy_hdr = 'Wave Energy (kW/m)',
-  caption    = 'Table 4: Area overlap with cables for wave energy (kW/m) by territory.')
 ```
 
 ### Tidal
@@ -831,9 +840,11 @@ knitr::include_graphics(sprintf('figs/mapWave_%s.pdf', str_replace_all(unique(wa
 
 ```{r mapWind, fig.cap='Maps of wind energy.', eval=F}
 wind_sf = read_sf(wind_geo) %>%
+  arrange(energy_num) %>%
   mutate(
     energy = factor(
-      energy_num, unique(energy_num), unique(energy_lbl), ordered=T))
+      energy_num, unique(energy_num), unique(energy_lbl), ordered=T)) %>%
+  arrange(region, energy)
 
 for (ter in unique(wind_sf$territory)){
     # ter = 'Hawaii'
@@ -842,12 +853,12 @@ for (ter in unique(wind_sf$territory)){
     energy_sf = wind_sf,
     ter = ter,
     legend_title = 'Wind\nspeed\n(m/s)',
-    redo = F,
+    redo = T,
     fig = fig)
-  #system(sprintf('open %s', fig))
+  system(sprintf('open %s', fig))
   #knitr::include_graphics(fig)
 }
-knitr::include_graphics(sprintf('figs/mapWind_%s.pdf', str_replace_all(unique(wind_sf$territory),' ','-')))
+#knitr::include_graphics(sprintf('figs/mapWind_%s.pdf', str_replace_all(unique(wind_sf$territory),' ','-')))
 ```
 
 ```{r srcTerritoryTemplate, include=F, eval=T}
