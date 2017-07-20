@@ -5,11 +5,11 @@ packages = c(
   # dynamic document creation
   'knitr','rmarkdown','bookdown','DT','htmltools','formattable',
   # plotting & mapping
-  'RColorBrewer','viridis','scales','tidyverse/ggplot2','ropensci/plotly','maps','albersusa','mapproj','wch/webshot','geojsonio','rmapshaper', # ,'plotKML'
+  'RColorBrewer','viridis','scales','tidyverse/ggplot2','ropensci/plotly','maps','mapproj','wch/webshot','geojsonio','rmapshaper',#'albersusa', 'ggsn', ,'plotKML' # 
   # [mapedit](ttp://r-spatial.org/r/2017/01/30/mapedit_intro.html)
-  'bhaskarvk/leaflet', 'bhaskarvk/leaflet.extras', 'r-spatial/mapview@develop', 'r-spatial/mapedit','cleangeo',
+  'bhaskarvk/leaflet', 'bhaskarvk/leaflet.extras', 'r-spatial/mapview@develop', 'r-spatial/mapedit','cleangeo','rasterVis',
   # spatial analytical
-  'sp','rgdal','raster','ncdf4','rgeos','geosphere','edzer/sfr','eblondel/cleangeo','geojsonio','maptools','hrbrmstr/albersusa') 
+  'sp','rgdal','raster','ncdf4','rgeos','geosphere','bbest/sf','eblondel/cleangeo','geojsonio','maptools','hrbrmstr/albersusa') 
 for (pkg in packages){ # pkg= packages[1] # pkg = 'r-spatial/mapview@develop' # pkg='ropensci/plotly'
   github_pkg = grepl('/', pkg)
   p = ifelse(github_pkg, sub('([-0-9A-Za-z]*)/([-0-9A-Za-z]*)@?([-0-9A-Za-z]*)', '\\2', pkg), pkg)
@@ -53,6 +53,7 @@ dx3_geo       = sprintf('../data/buf_3xdepth_incr%sm.geojson', d_incr)
 dx2_kml       = '../data/buf_2xdepth_incr100m.kml'
 dx3_kml       = '../data/buf_3xdepth_incr100m.kml'
 lns_d1x_kml   = '../data/lns_d1x.kml'
+land_usaeez_geo = '../data/land_wrld2_usaeez.geojson'
 
 # extract_cable-energy.R paths ----
 # wind

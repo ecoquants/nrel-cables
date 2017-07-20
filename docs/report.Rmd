@@ -36,49 +36,6 @@ if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_k
   opts_chunk$set(echo=F)
 }
 
-# webshot hack ----
-knitr::opts_chunk$set(tidy = FALSE)
-
-# Default image paths
-fig_path <- local({
-  i <- 0
-  path <- knitr::opts_chunk$get('fig.path')
-  function() {
-    i <<- i + 1
-    paste0(path, 'webshot', i, '.png')
-  }
-})
-
-# A hack to automatically include the webshot output as images in R Markdown
-shot <- function(..., file = fig_path(), FUN) {
-  opts <- knitr::opts_current$get()
-  
-  browser()
-  if (is.null(opts$vwidth))
-    vwidth <- 992
-  else
-    vwidth <- opts$fig.width * opts$dpi
-
-  if (is.null(opts$vheight))
-    vheight <- 744
-  else
-    vheight <- opts$fig.height * opts$dpi
-
-  tryCatch({
-    filepath <- FUN(..., file = file, vwidth = vwidth, vheight = vheight)
-    if (is.null(filepath)) {
-      return(invisible())
-    }
-
-    knitr::include_graphics(filepath)
-  },
-  error = function(e) {
-    invisible()
-  })
-}
-webshot <- function(...) shot(..., FUN = webshot::webshot)
-appshot <- function(...) shot(..., FUN = webshot::appshot)
-
 fmt_tbl = function(csv, energy_hdr, caption){
 
   d = read_csv(csv) %>%
@@ -146,7 +103,7 @@ plot_cbls = function(
       energy = factor(energy_lbl, unique(energy_lbl), ordered=T),
       pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
   
-  cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Remainder')
+  cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Available')
   
   d_p = energy_cbls %>%
     mutate(
@@ -186,6 +143,11 @@ plot_cbls = function(
     facet_wrap(~territory) # facet_wrap(~territory, scales='free_y') # facet_grid(. ~ territory)
   p
 }
+
+usa_eez = read_sf(usa_rgn_geo)
+#wrld2   = st_as_sf(map('world2', plot=F, fill=T))
+#usa2    = wrld2 %>% filter(ID=='USA')
+land    = read_sf(land_usaeez_geo)
 ```
 
 # Background
@@ -352,10 +314,11 @@ A depth-varying buffer to the offshore cables, 2 \* depth for "minimum" and 3 \*
 
 ```{r mapCableBuffs, eval=T}
 
+#out_html=F
 map_cbls = function(){
-  # TODO: basemap arg
   
-  m = leaflet() %>%
+  if (out_html){
+    m = leaflet() %>%
     addProviderTiles("Stamen.TonerLite", group = "B&W") %>%
     addProviderTiles('Esri.OceanBasemap', group = "Ocean") %>%  #
     addPolygons(
@@ -374,15 +337,18 @@ map_cbls = function(){
       baseGroups = c("B&W", "Ocean"),
       overlayGroups = c('Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
       options = layersControlOptions(collapsed = FALSE))
-  
-  if (out_html){
+    
     m
   } else {
-    # [How to save Leaflet in R map as png or jpg file? - Stack Overflow](https://stackoverflow.com/questions/31336898/how-to-save-leaflet-in-r-map-as-png-or-jpg-file)
-    m_html = '../tmp/mapCableBuffs.html'
-    m_png  = '../tmp/mapCableBuffs.png'
-    saveWidget(m, m_html, selfcontained=F)
-    webshot(m_html, cliprect="viewport")
+    
+    bb = st_bbox(dx3)    
+    p = ggplot() +
+      geom_sf(data=wrld2, fill='lightgray') +
+      geom_sf(data=dx3, fill='red', color='red') +
+      coord_sf(
+        xlim=bb[c('xmin','xmax')], 
+        ylim=bb[c('ymin','ymax')])
+    p
   }
 }
 map_cbls()
@@ -428,7 +394,7 @@ tbl_form_cbls = map2(
       levels = sprintf('%s_%04d', form, energy_num), 
       label  = energy_lbl, ordered=T))
 
-cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Remainder')
+cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Available')
   
 d_p = tbl_form_cbls %>%
   mutate(
@@ -541,11 +507,319 @@ units: wind speed (m/s) at 90m hub height
 TODO:
 - [Visualise sf objects — ggsf • ggplot2](http://ggplot2.tidyverse.org/reference/ggsf.html)
 
-```{r mapWind}
-wind = read_sf(wind_geo)
+```{r land selectFeatures}
+# resolve land / eez mismatch of borders by filling in eez not high seas
+    
+# paste(usa_eez$territory, collapse=', ')
+#  Alaska, East, Guam, Gulf of Mexico, Hawaii, 
+#  Johnston Atoll, N Mariana Islands, Palmyra Atoll, Puerto Rico, 
+#  US Virgin Islands, Wake Island, West
 
-# wind %>% as('Spatial') %>%
-#   spplot(.[''])
+ter = 'West' 
+land_ter_geo = sprintf('../data/land_%s.geojson', str_replace_all(ter,' ','-'))
+#eez_buf_n01 = st_buffer(eez %>% filter(territory==ter), dist = -0.1)
+# plot(eez['territory'])
+# plot(eez_buf_n01['territory'])
+
+eez_ter = usa_eez %>% filter(territory==ter) # plot(eez_ter['territory'])
+bb = st_bbox(eez_ter)
+# TODO: st_cast(x=st_bbox, to=st_polygon)
+bb_ply = st_sf(
+  tibble(
+    territory = ter,
+    geom = st_sfc(st_polygon(list(rbind(
+      c(bb['xmin'], bb['ymin']),
+      c(bb['xmax'], bb['ymin']),
+      c(bb['xmax'], bb['ymax']),
+      c(bb['xmin'], bb['ymax']),
+      c(bb['xmin'], bb['ymin'])))), crs = 4326)))
+
+bb_dif = st_difference(bb_ply, eez_ter) %>%
+  st_cast('POLYGON', do_split=T)
+
+i_rm = selectFeatures(bb_dif, index=T)
+land1 = bb_dif[setdiff(1:nrow(bb_dif), i_rm),] %>%
+  group_by(territory) %>%
+  summarize()
+
+write_sf(land1, land_ter_geo, delete_dsn=T)
+plot(land1)
+
+```
+
+```{r land rm_wrld2}
+land1 = read_sf(land_ter_geo)
+
+geos = sprintf(
+  '../data/land_%s.geojson', 
+  str_replace_all(
+    c('Alaska', 'West', 'East', 'Gulf of Mexico'),' ','-'))
+
+ter_sf = function(ter){
+  geo = sprintf('../data/land_%s.geojson', str_replace_all(ter, ' ','-'))
+  read_sf(geo)
+}
+
+ter_geo2shp = function(ter){
+  geo = sprintf('../data/land_%s.geojson', str_replace_all(ter, ' ','-'))
+  shp = sprintf('../data/land_%s.shp', str_replace_all(ter, ' ','_'))
+  read_sf(geo) %>%
+    write_sf(shp, delete_dsn=T)
+}
+ter_geo2shp('Alaska')
+ter_geo2shp('West')
+ter_geo2shp('East')
+ter_geo2shp('Gulf of Mexico')
+
+ter_geo2shp('Johnston Atoll')
+ter_geo2shp('N Mariana Islands')
+ter_geo2shp('Palmyra Atoll')
+ter_geo2shp('Puerto Rico')
+ter_geo2shp('US Virgin Islands')
+ter_geo2shp('Wake Island')
+
+ter_geo2shp('Guam')
+ter_geo2shp('Hawaii')
+#  Guam, Hawaii
+
+
+
+ter='Alaska'
+ter_sf(ter) %>%
+  write_sf(
+    sprintf('../data/land_%s.shp', str_replace_all(ter,' ','-')), 
+    delete_dsn=T)
+
+alaska = ter_sf('Alaska') # plot(alaska)
+west = ter_sf('Alaska')
+east = ter_sf('East')
+gomex = ter_sf('Gulf of Mexico')
+
+nam = rbind(alaska, west, east, gomex)
+plot(nam)
+
+wrld2 %>% 
+  filter(ID=='USA') %>%
+  write_sf('../data/usa2.shp')
+
+wrld2 %>% 
+  filter(ID!='USA') %>%
+  write_sf('../data/wrld2_notusa2.shp')
+
+nam = st_union(st_combine(nam))
+usa2 = st_difference(
+  , 
+  )
+write_sf(usa2, '../data/land_usa2.geojson', delete_dsn=T)
+
+write_sf(wrld2, '../data/land_world2.geojson', delete_dsn=T)
+
+wrld3 = st_difference(wrld2, land1)
+mapview(wrld3)
+                      
+wrld2_i = wrld2 %>% 
+  filter(
+    ID!='USA',
+    st_intersects(wrld2, bb_ply, sparse=F)[,1])
+
+
+
+land2 = st_difference(land1, st_union(st_combine(wrld2_i)))
+
+write_sf(land1, land_ter_geo, delete_dsn=T)
+plot(land2)
+#land1_e = editFeatures(land1)
+
+
+land4 = read_sf('../data/land_wrld2_usaeez_platecarree.shp') %>% as('Spatial') %>%
+  spTransform("+proj=longlat +datum=WGS84 +lon_wrap=180")
+plot(land4['ID'])
+
+land5 = readOGR('../data','land_wrld2_usaeez') %>%
+  spTransform("+proj=longlat +datum=WGS84 +lon_wrap=180")
+plot(land5)
+
+land6 = readOGR('../data','land_wrld2_usaeez_platecarree') %>%
+  spTransform("+proj=longlat +datum=WGS84 +lon_wrap=180")
+plot(land6)
+
+#ogr2ogr -s_srs EPSG:4326 -t_srs "+proj=longlat +ellps=WGS84 +pm=-180 +datum=WGS84 +no_defs" land_wrld2_usaeez_shifted.shp land_wrld2_usaeez.shp
+
+# [ogr - How to change shapefile longitude from -180 - 180 to 0 - 360? - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/79447/how-to-change-shapefile-longitude-from-180-180-to-0-360#answer-79448)
+ogr2ogr -t_srs "+proj=latlong +pm=-360" tmp.shp land_wrld2_usaeez.shp
+
+tmp = readOGR('../data','tmp') %>%
+  spTransform("+proj=longlat +datum=WGS84 +lon_wrap=180")
+plot(tmp)
+
+ogr2ogr -skipfailures world_part1.shp land_wrld2_usaeez.shp -clipsrc -180 -90 0 90
+ogr2ogr -skipfailures world_part2.shp land_wrld2_usaeez.shp -clipsrc 0 -90 180 90
+ogr2ogr world_part1_shifted.shp world_part1.shp -dialect sqlite -sql "SELECT ShiftCoords(geometry,360,0), ID, territory FROM world_part1"
+ogr2ogr world_0_360_raw.shp world_part2.shp
+ogr2ogr -update -append world_0_360_raw.shp world_part1_shifted.shp -nln world_0_360_raw
+ogr2ogr world_0_360.shp world_0_360_raw.shp -dialect sqlite -sql "SELECT ST_Union(Geometry), ID, territory FROM world_0_360_raw GROUP BY ID, territory"
+
+land_w = readOGR('../data','world_0_360') 
+land_w = read_sf('../data/world_0_360.shp') 
+land_w %>% write_sf(land_usaeez_geo, delete_dsn=T)
+
+plot(land_w['ID'])
+
+
+land7 = readOGR('../data','land_wrld2_usaeez_shifted') %>%
+  spTransform("+proj=longlat +datum=WGS84 +lon_wrap=180") %>%
+land7 = land7 %>% st_as_sf()
+plot(land7['ID'])
+
+ogr2ogr world_part1.shp world.shp -clipsrc -180 -90 0 90
+ogr2ogr world_part2.shp world.shp -clipsrc 0 -90 180 90
+
+%>% st_as_sf() %>%
+  write_sf('../data/land_wrld2_usaeez_platecarree.shp')
+
+
+land2 = land %>% as('Spatial') %>%
+  spTransform("+proj=longlat +datum=WGS84 +lon_wrap=180")
+land2 = land2 %>% st_as_sf()
+plot(land2 %>% filter(ID=='Algeria'))
+
+land3 = cleangeo::clgeo_Clean(land2 %>% as('Spatial'))
+plot(land3['ID'])
+filter(land3, ID=='Algeria') %>% select(ID) %>% plot()
+
+land2 = land2  
+  mutate(
+    #geometry   = (geometry + c(360,90)) %% c(360) - c(0,90),
+    geom_valid = st_is_valid(geometry)) # Algeria, Mali
+
+
+land2 %>% filter(!geom_valid)
+plot(land2 %>% filter(ID=='Algeria') %>% st_buffer(dist=0))
+plot( %>% st_buffer(dist=0))
+
+st_is_valid(land2)
+write_sf(land2, '../data/land_wrld2_usaeez.geojson', delete_dsn=T)
+    st_set_crs(crs_gcs_w)
+
+read_sf()
+
+wave_sf = wave_sf %>%
+    mutate(geometry = (geometry + c(360,90)) %% c(360) - c(0,90)) %>% 
+    st_set_crs(crs_gcs_w)
+```
+
+
+```{r map_energy_sf, eval=T}
+
+map_energy_sf = function(
+  energy_sf,
+  ter,
+  legend_title,
+  redo,
+  fig){
+  # ter = 'Hawaii'; fig = sprintf('figs/mapWind_%s.pdf', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
+  
+  
+  if (!file.exists(fig) | redo){
+    
+    d = energy_sf %>% 
+      filter(territory==ter)
+    eez = usa_eez %>%
+      filter(territory==ter)
+    cables = lns_d1x %>%
+      filter(territory==ter)
+    cables2 = dx2 %>%
+      filter(territory==ter)
+    cables3 = dx3 %>%
+      filter(territory==ter)
+    
+    bb = st_bbox(d)
+    # TODO: st_cast(x=st_bbox, to=st_polygon)                 
+    bb_ply = st_sf(
+      tibble(
+        territory = ter,
+        geom = st_sfc(st_polygon(list(rbind(
+          c(bb['xmin'], bb['ymin']),
+          c(bb['xmax'], bb['ymin']),
+          c(bb['xmax'], bb['ymax']),
+          c(bb['xmin'], bb['ymax']),
+          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
+    earth = land %>%
+      filter(
+        st_intersects(land, bb_ply, sparse=F)[,1])
+    plot(earth)
+
+    p = ggplot(data=d) +
+      geom_sf(aes(fill=energy), color=NA) +
+      scale_fill_brewer(legend_title, palette='YlGnBu', direction=-1) +
+      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
+      geom_sf(data=eez, fill=NA, color='gray40') +
+      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
+      coord_sf(
+        xlim=bb[c('xmin','xmax')], 
+        ylim=bb[c('ymin','ymax')]) +
+      theme(
+        legend.background = element_rect(fill='grey90'))
+      
+    pdf(fig, width=6.5, height=5)
+    #print(p0)
+    print(p)
+    dev.off()
+  }
+  system(sprintf('open %s', fig))
+  knitr::include_graphics(fig)
+}
+
+ter = 'Hawaii'
+fig = sprintf('figs/mapWave_%s.pdf', str_replace_all(ter,' ','-'))
+map_energy_sf(
+  energy_sf = wave_sf,
+  ter = ter,
+  legend_title = 'Wave\nEnergy\n(kW/m)',
+  redo = T,
+  fig = fig)
+system(sprintf('open %s', fig))
+```
+
+```{r mapWind for ter in wind}
+for (ter in unique(wind_sf$territory)){
+    # ter = 'Hawaii'
+  fig = sprintf('figs/mapWind_%s.pdf', str_replace_all(ter,' ','-'))
+  map_energy_sf(
+    energy_sf = wind_sf,
+    ter = ter,
+    legend_title = 'Wind\nspeed\n(m/s)',
+    redo = T,
+    fig = fig)
+  system(sprintf('open %s', fig))
+}
+```
+
+
+```{r mapWind Hawaii, eval=T, fig.cap='Wind Energy for Hawaii.'}
+# wrld2 = st_as_sf(map('world2', plot=F, fill=T))
+# usa2 = wrld2 %>% filter(ID=='USA')
+# usa_eez = read_sf(usa_rgn_geo)
+wind_sf = read_sf(wind_geo) %>%
+  mutate(
+    energy = factor(
+      energy_num, unique(energy_num), unique(energy_lbl), ordered=T))
+
+# tibble(
+#   ter = unique(wind_sf$territory),
+#   caption = sprintf()
+
+ter = 'Hawaii'
+fig = sprintf('figs/mapWind_%s.pdf', str_replace_all(ter,' ','-'))
+map_energy_sf(
+  energy_sf = wind_sf,
+  ter = ter,
+  legend_title = 'Wind\nspeed\n(m/s)',
+  redo = T,
+  fig = fig)
+system(sprintf('open %s', fig))
 ```
 
 ```{r tblWind}
@@ -567,7 +841,46 @@ plot_cbls(
 
 units: wave energy flux (kW/m)
 
-```{r mapWave}
+```{r mapWaveHawaii, eval=T, fig.cap='Wave Energy for Hawaii.'}
+# wrld2 = st_as_sf(map('world2', plot=F, fill=T))
+# usa2 = wrld2 %>% filter(ID=='USA')
+# usa_eez = read_sf(usa_rgn_geo)
+wave_sf = read_sf(wave_geo) %>%
+  mutate(
+    energy = factor(
+      energy_num, unique(energy_num), unique(energy_lbl), ordered=T))
+
+# tibble(
+#   ter = unique(wind_sf$territory),
+#   caption = sprintf()
+
+ter = 'Hawaii'
+fig = sprintf('figs/mapWave_%s.pdf', str_replace_all(ter,' ','-'))
+map_energy_sf(
+  energy_sf = wave_sf,
+  ter = ter,
+  legend_title = 'Wave\nenergy\n(kW/m)',
+  redo = T,
+  fig = fig)
+system(sprintf('open %s', fig))
+```
+
+
+```{r mapWave for ter in wave}
+for (ter in unique(wind_sf$territory)){
+    # ter = 'Hawaii'
+  fig = sprintf('figs/mapWave_%s.pdf', str_replace_all(ter,' ','-'))
+  map_energy_sf(
+    energy_sf = wind_sf,
+    ter = ter,
+    legend_title = 'Wave\nenergy\n(kW/m)',
+    redo = T,
+    fig = fig)
+  system(sprintf('open %s', fig))
+}
+```
+
+```{r mapWave leaflet, eval=F}
 # wave read, clean, dissolve internal polys, 
 wave = read_sf(wave_geo) %>% 
   as('Spatial') %>% 
@@ -633,7 +946,7 @@ units: mean power (W/m^2)
 
 TODO: seperate tif into east and west for display in leaflet
 
-```{r mapTide}
+```{r mapTide leaflet, eval=F}
 #tide = raster(tide_tif)
 #plot(tide_tif)
 # TODO: in report.Rmd, leaflet viz tide rasters per territory w/ regex in data/tide_ter-*.tif
@@ -657,10 +970,119 @@ leaflet() %>%
 ```
 
 
+```{r map_tide, eval=T}
+
+territories = read_csv(tide_cbls_csv) %>% 
+  filter(territory !='ALL') %>% 
+  .$territory %>% unique()
+
+map_tide = function(
+  ter,
+  legend_title,
+  redo,
+  fig){
+  # ter = 'Alaska'; fig = sprintf('figs/mapTide_%s.pdf', str_replace_all(ter,' ','-')); legend_title = 'Tidal\npower\n(W/m2)'; redo = T
+  
+  if (!file.exists(fig) | redo){
+    
+    ter_str = str_replace_all(ter, ' ', '-')
+    tif = sprintf('../data/tide_ter-%s.tif', ter_str)
+    r = raster(tif)
+
+    #d = energy_sf %>% 
+    #  filter(territory==ter)
+    eez = usa_eez %>%
+      filter(territory==ter)
+    cables = lns_d1x %>%
+      filter(territory==ter)
+    cables2 = dx2 %>%
+      filter(territory==ter)
+    cables3 = dx3 %>%
+      filter(territory==ter)
+    
+    bb = bbox(r)
+    bb = c(xmin=bb[1,1], xmax=bb[1,2], ymin=bb[2,1], ymax=bb[2,2])
+    # TODO: st_cast(x=st_bbox, to=st_polygon)                 
+    bb_ply = st_sf(
+      tibble(
+        territory = ter,
+        geom = st_sfc(st_polygon(list(rbind(
+          c(bb['xmin'], bb['ymin']),
+          c(bb['xmax'], bb['ymin']),
+          c(bb['xmax'], bb['ymax']),
+          c(bb['xmin'], bb['ymax']),
+          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
+    earth = land %>%
+      filter(
+        st_intersects(land, bb_ply, sparse=F)[,1])
+
+    # https://nrelscience.org/2013/05/30/this-is-how-i-did-it-mapping-in-r-with-ggplot2/
+    d = as.data.frame(r, xy=T) %>% as_tibble()
+    colnames(d) <- c('lon','lat','value')
+    d = d %>% filter(!is.na(value))
+    
+    p = ggplot() + 
+      geom_raster(data=d, aes(x=lon, y=lat, fill=value)) + 
+      scale_fill_gradientn(
+        legend_title,
+        colours=rev(brewer.pal(11,'YlGnBu')),
+        limits=c(0,cellStats(r, 'max')),
+        na.value = 'transparent') +
+      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
+      geom_sf(data=eez, fill=NA, color='gray40') +
+      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
+      coord_sf(
+        xlim=bb[c('xmin','xmax')], 
+        ylim=bb[c('ymin','ymax')]) +
+      theme(
+        legend.background = element_rect(fill='grey90'),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank())
+      
+    pdf(fig, width=6.5, height=5)
+    print(p)
+    dev.off()
+    
+  }
+  #system(sprintf('open %s', fig))
+  knitr::include_graphics(fig)
+}
+
+# ter = 'Hawaii'
+# fig = sprintf('figs/mapWave_%s.pdf', str_replace_all(ter,' ','-'))
+# map_energy_sf(
+#   energy_sf = wave_sf,
+#   ter = ter,
+#   legend_title = 'Wave\nEnergy\n(kW/m)',
+#   redo = T,
+#   fig = fig)
+# system(sprintf('open %s', fig))
+```
+
+
+```{r mapTide for ter in tide}
+territories = read_csv(tide_cbls_csv) %>% 
+  filter(territory !='ALL') %>% 
+  .$territory %>% unique()
+
+for (ter in territories){
+    # ter = 'Hawaii'
+  fig = sprintf('figs/mapTide_%s.pdf', str_replace_all(ter,' ','-'))
+  map_tide(
+    ter = ter,
+    legend_title = 'Tidal\npower\n(W/m2)',
+    fig = fig,
+    redo = T)
+  system(sprintf('open %s', fig))
+}
+```
+
 ```{r tblTide}
 fmt_tbl(
   csv        = tide_cbls_csv, 
-  energy_hdr = 'Tidal Power (W/m2)',
+  energy_hdr = 'Tidal power (W/m2)',
   caption    = 'Constraints of cable (minimum - recommended) categories of tidal 
   energy (W/m2) at 90m hub height.')
 ```
