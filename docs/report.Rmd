@@ -38,6 +38,12 @@ if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_k
 
 fmt_tbl = function(csv, energy_hdr, caption){
 
+  # read_csv(csv) %>%
+  #   mutate(
+  #    cable2_pct = cable2_pct/100, 
+  #    cable3_pct = cable3_pct/100) %>%
+  #   write_csv(csv)
+  
   d = read_csv(csv) %>%
     filter(
       territory != 'ALL',
@@ -50,8 +56,8 @@ fmt_tbl = function(csv, energy_hdr, caption){
         th(rowspan=2, 'Territory'),
         th(rowspan=2, energy_hdr),
         th(rowspan=2, 'Area (km2)'),
-        th(colspan=2, 'Min. Cable (2x)'),
-        th(colspan=2, 'Rec. Cable (3x)')),
+        th(colspan=2, 'Min. Cable (2z)'),
+        th(colspan=2, 'Rec. Cable (3z)')),
       tr(
         th('Area (km2)'),
         th('(%)'),
@@ -80,17 +86,13 @@ fmt_tbl = function(csv, energy_hdr, caption){
       rownames=F, container=hdr, caption=caption,
       options = list(
         dom='t', # off: n_entries/search/paging/ordering
-        pageLength = nrow(tbl), ordering=F,
+        pageLength = nrow(d), ordering=F,
         columnDefs = list(list(className='dt-right', targets=1:5))))
 }
 
-dx2     = read_sf(dx2_geo)
-dx3     = read_sf(dx3_geo)
-lns_d1x = read_sf(lns_d1x_rgn_geo)
-
 plot_cbls = function(
   csv   = wave_cbls_csv, 
-  title = 'Wave Energy by Area and Power Class per US Territory',
+  #title = 'Wave Energy by Area and Power Class per US Territory',
   xlab  = 'Wave energy (kW/m)',
   legend_position      = c(1,0),
   legend_justification = c(1,0)){ 
@@ -103,7 +105,8 @@ plot_cbls = function(
       energy = factor(energy_lbl, unique(energy_lbl), ordered=T),
       pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
   
-  cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Available')
+  #cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Available')
+  cable_ord = c('min_2d'='Min.(2z)', 'rec_3d'='+Rec.(3z)', 'rem'='Free')
   
   d_p = energy_cbls %>%
     mutate(
@@ -133,9 +136,9 @@ plot_cbls = function(
       aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
       position = position_nudge(y = txt_adj), size=2) +
     labs(
-      title=title, 
-      subtitle='with Cable Overlay (Minimum - Recommended %)', 
-      x=xlab, y='Area (1,000 km^2)', fill='Type') +
+      #title=title, 
+      #subtitle='with Cable Overlay (Minimum - Recommended %)', 
+      x=xlab, y='Area (1,000 km^2)', fill='Cable') +
     theme(
       legend.justification = legend_justification, 
       legend.position      = legend_position,
@@ -144,10 +147,201 @@ plot_cbls = function(
   p
 }
 
-usa_eez = read_sf(usa_rgn_geo)
-#wrld2   = st_as_sf(map('world2', plot=F, fill=T))
+map_cable = function(
+  ter,
+  legend_title,
+  redo,
+  fig){
+  # ter = 'Hawaii'; fig = sprintf('figs/mapCable_%s.pdf', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = sprintf('Submarine cables within %s EEZ.', ter); redo = T
+  
+  if (!file.exists(fig) | redo){
+    
+    eez = usa_eez %>%
+      filter(territory==ter)
+    cables = lns_d1x %>%
+      filter(territory==ter)
+    cables2 = dx2 %>%
+      filter(territory==ter)
+    cables3 = dx3 %>%
+      filter(territory==ter)
+    
+    bb = st_bbox(eez)
+    bb_ply = st_sf(
+      tibble(
+        territory = ter,
+        geom = st_sfc(st_polygon(list(rbind(
+          c(bb['xmin'], bb['ymin']),
+          c(bb['xmax'], bb['ymin']),
+          c(bb['xmax'], bb['ymax']),
+          c(bb['xmin'], bb['ymax']),
+          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
+    earth = land %>%
+      filter(
+        st_intersects(land, bb_ply, sparse=F)[,1]) # plot(earth)
+
+    p = ggplot(data=eez) +
+      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
+      geom_sf(data=eez, fill=NA, color='gray40') +
+      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
+      coord_sf(
+        xlim=bb[c('xmin','xmax')], 
+        ylim=bb[c('ymin','ymax')])
+      
+    pdf(fig, width=6.5, height=5)
+    print(p)
+    dev.off()
+  }
+  #system(sprintf('open %s', fig))
+  #knitr::include_graphics(fig)
+}
+
+map_energy_sf = function(
+  energy_sf,
+  ter,
+  legend_title,
+  redo,
+  fig){
+  # ter = 'Hawaii'; fig = sprintf('figs/mapWind_%s.pdf', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
+  
+  if (!file.exists(fig) | redo){
+    
+    d = energy_sf %>% 
+      filter(territory==ter)
+    eez = usa_eez %>%
+      filter(territory==ter)
+    cables = lns_d1x %>%
+      filter(territory==ter)
+    cables2 = dx2 %>%
+      filter(territory==ter)
+    cables3 = dx3 %>%
+      filter(territory==ter)
+    
+    bb = st_bbox(d)
+    # TODO: st_cast(x=st_bbox, to=st_polygon)                 
+    bb_ply = st_sf(
+      tibble(
+        territory = ter,
+        geom = st_sfc(st_polygon(list(rbind(
+          c(bb['xmin'], bb['ymin']),
+          c(bb['xmax'], bb['ymin']),
+          c(bb['xmax'], bb['ymax']),
+          c(bb['xmin'], bb['ymax']),
+          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
+    earth = land %>%
+      filter(
+        st_intersects(land, bb_ply, sparse=F)[,1]) # plot(earth)
+
+    p = ggplot(data=d) +
+      geom_sf(aes(fill=energy), color=NA) +
+      scale_fill_brewer(legend_title, palette='YlGnBu', direction=-1) +
+      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
+      geom_sf(data=eez, fill=NA, color='gray40') +
+      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
+      coord_sf(
+        xlim=bb[c('xmin','xmax')], 
+        ylim=bb[c('ymin','ymax')]) +
+      theme(
+        legend.background = element_rect(fill='grey90'),  
+        legend.key = element_blank())
+      
+    pdf(fig, width=6.5, height=5)
+    print(p)
+    dev.off()
+  }
+  #system(sprintf('open %s', fig))
+  #knitr::include_graphics(fig)
+}
+
+map_tide = function(
+  ter,
+  legend_title,
+  redo,
+  fig){
+  # ter = 'Alaska'; fig = sprintf('figs/mapTide_%s.pdf', str_replace_all(ter,' ','-')); legend_title = 'Tidal\npower\n(W/m2)'; redo = T
+  
+  if (!file.exists(fig) | redo){
+    
+    ter_str = str_replace_all(ter, ' ', '-')
+    tif = sprintf('../data/tide_ter-%s.tif', ter_str)
+    r = raster(tif)
+
+    #d = energy_sf %>% 
+    #  filter(territory==ter)
+    eez = usa_eez %>%
+      filter(territory==ter)
+    cables = lns_d1x %>%
+      filter(territory==ter)
+    cables2 = dx2 %>%
+      filter(territory==ter)
+    cables3 = dx3 %>%
+      filter(territory==ter)
+    
+    bb = bbox(r)
+    bb = c(xmin=bb[1,1], xmax=bb[1,2], ymin=bb[2,1], ymax=bb[2,2])
+    # TODO: st_cast(x=st_bbox, to=st_polygon)                 
+    bb_ply = st_sf(
+      tibble(
+        territory = ter,
+        geom = st_sfc(st_polygon(list(rbind(
+          c(bb['xmin'], bb['ymin']),
+          c(bb['xmax'], bb['ymin']),
+          c(bb['xmax'], bb['ymax']),
+          c(bb['xmin'], bb['ymax']),
+          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
+    earth = land %>%
+      filter(
+        st_intersects(land, bb_ply, sparse=F)[,1])
+
+    # https://nrelscience.org/2013/05/30/this-is-how-i-did-it-mapping-in-r-with-ggplot2/
+    d = as.data.frame(r, xy=T) %>% as_tibble()
+    colnames(d) <- c('lon','lat','value')
+    d = d %>% filter(!is.na(value))
+    
+    p = ggplot() + 
+      geom_raster(data=d, aes(x=lon, y=lat, fill=value)) + 
+      scale_fill_gradientn(
+        legend_title,
+        colours=rev(brewer.pal(11,'YlGnBu')),
+        limits=c(0,cellStats(r, 'max')),
+        na.value = 'transparent') +
+      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
+      geom_sf(data=eez, fill=NA, color='gray40') +
+      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
+      coord_sf(
+        xlim=bb[c('xmin','xmax')], 
+        ylim=bb[c('ymin','ymax')]) +
+      theme(
+        legend.background = element_rect(fill='grey90'),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),  
+        legend.key = element_blank())
+      
+    pdf(fig, width=6.5, height=5)
+    print(p)
+    dev.off()
+    
+  }
+  #system(sprintf('open %s', fig))
+  knitr::include_graphics(fig)
+}
+
+# revert to old red-green-blue default color, not new viridis
+#   per https://github.com/tidyverse/ggplot2/blob/00ecd3670ef0f1c195bf4c6b5ada3b1895712f1c/NEWS.md#ggplot2-2219000
+scale_fill_ordinal = scale_fill_hue
+
 #usa2    = wrld2 %>% filter(ID=='USA')
+wrld2   = st_as_sf(map('world2', plot=F, fill=T))
+usa_eez = read_sf(usa_rgn_geo)
 land    = read_sf(land_usaeez_geo)
+lns_d1x = read_sf(lns_d1x_rgn_geo)
+dx2     = read_sf(dx2_geo)
+dx3     = read_sf(dx3_geo)
 ```
 
 # Background
@@ -168,9 +362,9 @@ TODO: add citations to bibliography:
 
 - [MarineCadastre.gov cable metadata](https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html)
 
-See Table \@ref(tab:tblTerrritories) and Map \@ref(fig:mapCablesTerritories).
+See Table 1 and Figure \@ref(fig:mapCablesTerritories).
 
-```{r tblTerrritories}
+```{r tblTerritories}
 usa = read_sf(usa_rgn_s_geo)
 st_geometry(usa) = NULL # drop geometry column
 
@@ -187,7 +381,7 @@ tbl %>%
     `Area (km2)` = color_bar('lightgray'))) %>%
   as.datatable(
     rownames = F, 
-    caption  = 'Territories within the United States exclusive economic zone (EEZ) and having submarine cables.',
+    caption  = 'Table 1: Territories within the United States exclusive economic zone (EEZ) and having submarine cables.',
     options  = list(
       dom='t', # off: n_entries/search/paging/ordering
       pageLength = nrow(tbl), ordering=F,
@@ -195,8 +389,8 @@ tbl %>%
 ```
 
 
-```{r mapCablesTerritories, fig.cap='Map of NOAA Charted Submarine cables as of December 2012 within the exclusive economic zone (EEZ; 200 nm) of United States territories.'}
-fig = 'figs/mapCablesTerritories.pdf' # redo=T
+```{r mapCableTerritories, fig.cap='Map of NOAA Charted Submarine cables as of December 2012 within the exclusive economic zone (EEZ; 200 nm) of United States territories.'}
+fig = 'figs/mapCableTerritories.pdf' # redo=T
 if (!file.exists(fig) | redo){
 
   cables = read_sf(lns_geo) %>%                      # cables
@@ -235,7 +429,7 @@ if (!file.exists(fig) | redo){
   pdf(fig, width=6.5, height=5)
   print(p)
   dev.off()
-  system(sprintf('open %s', fig))
+  #system(sprintf('open %s', fig))
 }
 knitr::include_graphics(fig)
 ```
@@ -314,7 +508,7 @@ cable_buf = merge(cables_buffers)
 cable_buf = simplify(cable_buf)
 ```
 
-## Depth-Varying Buffer
+## Depth-Varying Cable Buffer
 
 A depth-varying buffer to the offshore cables, 2 \* depth for "minimum" and 3 \* depth for "recommended" separation zones for routing new cables, by first intersecting depth with cables, then iterating over each depth to apply the appropriate buffers before finally dissolving all buffers. In order to apply the buffer, I needed to project from geographic coordinates to a projection that minimizes area distortion, so chose Albers Equal Area and applied the ["one-sixth rule"]( http://desktop.arcgis.com/en/arcmap/latest/map/projections/albers-equal-area-conic.htm#GUID-2158C4F9-F197-458E-94F0-84933C1BE6B7) based on the extent of the cable features to minimize distortion.
 
@@ -368,7 +562,7 @@ if (!file.exists(fig) | redo){
   pdf(fig, width=6.5, height=5)
   print(p)
   dev.off()
-  system(sprintf('open %s', fig))
+  #system(sprintf('open %s', fig))
 }
 knitr::include_graphics(fig)
 ```
@@ -392,7 +586,7 @@ Google Earth files (*.kml):
 
 Extract average and area of overlap between zones and renewable energy potential areas, possibly at various depth bins.
 
-```{r pltEnergy}
+```{r pltEnergy, fig.cap='Energy by area and power class per US territory with cable overlay (minimum - recommended %).'}
 read_cbls = function(csv, form){
   read_csv(csv) %>%
     filter(
@@ -414,7 +608,7 @@ tbl_form_cbls = map2(
       levels = sprintf('%s_%04d', form, energy_num), 
       label  = energy_lbl, ordered=T))
 
-cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Available')
+cable_ord = c('min_2d'='Min.(2z)', 'rec_3d'='+Rec.(3z)', 'rem'='Free')
   
 d_p = tbl_form_cbls %>%
   mutate(
@@ -431,41 +625,42 @@ d_p = tbl_form_cbls %>%
       cable_ord, ordered=T)) %>%
   arrange(form, energy, type)
 
-txt_adj = energy_cbls %>% 
+txt_adj = tbl_form_cbls %>% 
   summarize(txt_adj = max(area_km2)/1000*0.025) %>% 
   .$txt_adj
 
 p = ggplot(
   data=d_p,
-  aes(x = energy, y = km2/1000, fill=type)) +
+  aes(x = energy, y = km2/1000, fill=factor(type))) +
+  #scale_fill_brewer(palette = 'Spectral') +
   geom_col() +
   geom_text(
     data=tbl_form_cbls, 
     aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
     position = position_nudge(y = txt_adj), size=2) +
   labs(
-    title    = 'Energy by Area and Power Class per US Territory', 
-    subtitle = 'with Cable Overlay (Minimum - Recommended %)', 
-    x='Energy', y='Area (1,000 km^2)', fill='Type') +
+    #title    = 'Energy by Area and Power Class per US Territory', 
+    #subtitle = 'with Cable Overlay (Minimum - Recommended %)', 
+    x='Energy', y='Area (1,000 km^2)', fill='Cable') +
   theme(
     legend.justification = c(1,1), 
     legend.position      = c(1,1),
     axis.text.x = element_text(angle = 90, hjust = 1)) + 
   facet_wrap(~form, scales='free_x')
-p
+print(p)
 ```
 
 ```{r tblEnergy}
 d = tbl_form_cbls
 energy_hdr = 'Amount'
-caption = 'Area overlap with cables by form of energy broken into size classes across all territories.'
+caption = 'Table 2: Area overlap with cables by form of energy broken into size classes across all territories.'
 
 # update energy column for proportion in color_box
 e_lbls = c(
     '<=7','7-8',  '8-9','9-10','10-11','11-12', #  1:6
    '0-10',   '10-20',    '20-30',  '>30',       #  7:10
   '0-500','500-1000','1000-1500','>1500')       # 11:14
-e_idx = c(1,7,11, 2,8,12, 3, 4,9,13, 5,10,14, 6)
+e_idx = c(1,7,11, 2,8,12, 3, 4,9,13, 5,10,14, 6) # setdiff(1:length(e_lbls), e_idx) 
 e_lkup = setNames(e_idx, 1:14)
 d = d %>% 
   mutate(
@@ -494,8 +689,8 @@ hdr = htmltools::withTags(table(
     tr(
       th(colspan=2, 'Energy'),
       th(rowspan=2, 'Area (km2)'),
-      th(colspan=2, 'Min. Cable (2x)'),
-      th(colspan=2, 'Rec. Cable (3x)')),
+      th(colspan=2, 'Min. Cable (2z)'),
+      th(colspan=2, 'Rec. Cable (3z)')),
     tr(
       th('Form'),
       th('Amount'),
@@ -516,7 +711,7 @@ d %>%
     caption = caption,
     options = list(
       dom='t', # off: n_entries/search/paging/ordering
-      pageLength = nrow(tbl), ordering=F,
+      pageLength = nrow(d), ordering=F,
       columnDefs = list(list(className='dt-right', targets=1:5))))
 ```
 
@@ -524,85 +719,117 @@ d %>%
 
 units: wind speed (m/s) at 90m hub height
 
-TODO:
-- [Visualise sf objects — ggsf • ggplot2](http://ggplot2.tidyverse.org/reference/ggsf.html)
-
-
-```{r map_energy_sf, eval=T}
-
-map_energy_sf = function(
-  energy_sf,
-  ter,
-  legend_title,
-  redo,
-  fig){
-  # ter = 'Hawaii'; fig = sprintf('figs/mapWind_%s.pdf', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
-  
-  
-  if (!file.exists(fig) | redo){
-    
-    d = energy_sf %>% 
-      filter(territory==ter)
-    eez = usa_eez %>%
-      filter(territory==ter)
-    cables = lns_d1x %>%
-      filter(territory==ter)
-    cables2 = dx2 %>%
-      filter(territory==ter)
-    cables3 = dx3 %>%
-      filter(territory==ter)
-    
-    bb = st_bbox(d)
-    # TODO: st_cast(x=st_bbox, to=st_polygon)                 
-    bb_ply = st_sf(
-      tibble(
-        territory = ter,
-        geom = st_sfc(st_polygon(list(rbind(
-          c(bb['xmin'], bb['ymin']),
-          c(bb['xmax'], bb['ymin']),
-          c(bb['xmax'], bb['ymax']),
-          c(bb['xmin'], bb['ymax']),
-          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
-    earth = land %>%
-      filter(
-        st_intersects(land, bb_ply, sparse=F)[,1]) # plot(earth)
-
-    p = ggplot(data=d) +
-      geom_sf(aes(fill=energy), color=NA) +
-      scale_fill_brewer(legend_title, palette='YlGnBu', direction=-1) +
-      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
-      geom_sf(data=eez, fill=NA, color='gray40') +
-      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
-      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
-      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
-      coord_sf(
-        xlim=bb[c('xmin','xmax')], 
-        ylim=bb[c('ymin','ymax')]) +
-      theme(
-        legend.background = element_rect(fill='grey90'),  
-        legend.key = element_blank())
-      
-    pdf(fig, width=6.5, height=5)
-    #print(p0)
-    print(p)
-    dev.off()
-  }
-  system(sprintf('open %s', fig))
-  knitr::include_graphics(fig)
-}
-
-# ter = 'Hawaii'
-# fig = sprintf('figs/mapWave_%s.pdf', str_replace_all(ter,' ','-'))
-# map_energy_sf(
-#   energy_sf = wave_sf,
-#   ter = ter,
-#   legend_title = 'Wave\nEnergy\n(kW/m)',
-#   redo = T,
-#   fig = fig)
-# system(sprintf('open %s', fig))
+```{r pltWind, fig.cap='Wind speed (m/s) and area per US territory with cable overlay (minimum - recommended %).'}
+plot_cbls(
+  csv   = wind_cbls_csv, 
+  #title = 'Wind Energy by Area and Power Class per US Territory',
+  xlab  = 'Wind speed (m/s)',
+  # legend_position      = c(0,0.47),
+  # legend_justification = c(0,1))
+  legend_justification = c(1,1), 
+  legend_position      = c(1,1))
 ```
 
-```{r mapWind for ter in wind}
+```{r tblWind}
+fmt_tbl(
+  csv=wind_cbls_csv, energy_hdr='Wind Speed (m/s)',
+  caption='Table 3: Area overlap with cables for wind speed (m/s) at 90m hub height by territory.')
+```
+
+### Wave
+
+units: wave energy flux (kW/m)
+
+```{r pltWave, fig.cap='Wave energy (kW/m) and area per US territory with cable overlay (minimum - recommended %).'}
+plot_cbls(
+  csv   = wave_cbls_csv,
+  #title = 'Wave Energy by Area and Power Class per US Territory',
+  xlab  = 'Wave energy (kW/m)')
+```
+
+```{r tblWave}
+fmt_tbl(
+  csv        = wave_cbls_csv, 
+  energy_hdr = 'Wave Energy (kW/m)',
+  caption    = 'Table 4: Area overlap with cables for wave energy (kW/m) by territory.')
+```
+
+### Tidal
+
+units: mean power (W/m^2)
+
+```{r pltTide, fig.cap='Tidal power (W/m2) and area per US territory with cable overlay (minimum - recommended %).'}
+plot_cbls(
+  csv   = tide_cbls_csv, 
+  #title = 'Tidal Energy by Area and Power Class per US Territory',
+  xlab  = 'Tidal power (W/m2)',
+  legend_position      = c(1,1),
+  legend_justification = c(1,1))
+```
+
+```{r tblTide}
+fmt_tbl(
+  csv        = tide_cbls_csv, 
+  energy_hdr = 'Tidal power (W/m2)',
+  caption    = 'Table 5: Area overlap with cables for tidal power (W/m2) by territory.')
+```
+
+## Detailed Maps by US Territory of Cable Buffer and Renewable Energy
+
+```{r mapCable, fig.cap='Maps of tidal energy.', eval=F}
+for (ter in ){
+    # ter = 'Hawaii'
+  fig = sprintf('figs/mapCable_%s.pdf', str_replace_all(ter,' ','-'))
+  map_cable(
+    ter = ter,
+    fig = fig,
+    redo = F)
+  #system(sprintf('open %s', fig))
+}
+knitr::include_graphics(sprintf('figs/mapCable_%s.pdf', str_replace_all(unique(lns_d1x$territory),' ','-')))
+```
+
+```{r mapTide, fig.cap='Maps of tidal energy.', eval=F}
+territories = read_csv(tide_cbls_csv) %>% 
+  filter(territory !='ALL') %>% 
+  .$territory %>% unique()
+
+for (ter in territories){
+    # ter = 'Hawaii'
+  fig = sprintf('figs/mapTide_%s.pdf', str_replace_all(ter,' ','-'))
+  map_tide(
+    ter = ter,
+    legend_title = 'Tidal\npower\n(W/m2)',
+    fig = fig,
+    redo = F)
+  #system(sprintf('open %s', fig))
+}
+
+knitr::include_graphics(sprintf('figs/mapTide_%s.pdf', str_replace_all(territories,' ','-')))
+```
+
+```{r mapWave, fig.cap='Maps of wave energy.', eval=F}
+wave_sf = read_sf(wave_geo) %>%
+  filter(!is.na(territory)) %>%
+  mutate(
+    energy = factor(
+      energy_num, unique(energy_num), unique(energy_lbl), ordered=T))
+
+for (ter in unique(wave_sf$territory)){ # ter = 'Hawaii'
+  fig = sprintf('figs/mapWave_%s.pdf', str_replace_all(ter,' ','-'))
+  map_energy_sf(
+    energy_sf = wave_sf,
+    ter = ter,
+    legend_title = 'Wave\nenergy\n(kW/m)',
+    redo = F,
+    fig = fig)
+  #system(sprintf('open %s', fig))
+  #knitr::include_graphics(fig)
+}
+knitr::include_graphics(sprintf('figs/mapWave_%s.pdf', str_replace_all(unique(wave_sf$territory),' ','-')))
+```
+
+```{r mapWind, fig.cap='Maps of wind energy.', eval=F}
 wind_sf = read_sf(wind_geo) %>%
   mutate(
     energy = factor(
@@ -615,324 +842,21 @@ for (ter in unique(wind_sf$territory)){
     energy_sf = wind_sf,
     ter = ter,
     legend_title = 'Wind\nspeed\n(m/s)',
-    redo = T,
+    redo = F,
     fig = fig)
-  system(sprintf('open %s', fig))
-}
-```
-
-
-```{r mapWind Hawaii, eval=T, fig.cap='Wind Energy for Hawaii.'}
-# wrld2 = st_as_sf(map('world2', plot=F, fill=T))
-# usa2 = wrld2 %>% filter(ID=='USA')
-# usa_eez = read_sf(usa_rgn_geo)
-
-
-# tibble(
-#   ter = unique(wind_sf$territory),
-#   caption = sprintf()
-
-ter = 'Hawaii'
-fig = sprintf('figs/mapWind_%s.pdf', str_replace_all(ter,' ','-'))
-map_energy_sf(
-  energy_sf = wind_sf,
-  ter = ter,
-  legend_title = 'Wind\nspeed\n(m/s)',
-  redo = T,
-  fig = fig)
-system(sprintf('open %s', fig))
-```
-
-```{r tblWind}
-fmt_tbl(
-  csv=wind_cbls_csv, energy_hdr='Wind Speed (m/s)',
-  caption='Constraints of cable (minimum - recommended) categories of wind speed (m/s) at 90m hub height.')
-```
-
-```{r pltWind}
-plot_cbls(
-  csv   = wind_cbls_csv, 
-  title = 'Wind Energy by Area and Power Class per US Territory',
-  xlab  = 'Wind speed (m/s)',
-  legend_position      = c(0,0.47),
-  legend_justification = c(0,1))
-```
-
-### Wave
-
-units: wave energy flux (kW/m)
-
-```{r mapWaveHawaii, eval=T, fig.cap='Wave Energy for Hawaii.'}
-# wrld2 = st_as_sf(map('world2', plot=F, fill=T))
-# usa2 = wrld2 %>% filter(ID=='USA')
-# usa_eez = read_sf(usa_rgn_geo)
-wave_sf = read_sf(wave_geo) %>%
-  filter(!is.na(territory)) %>%
-  mutate(
-    energy = factor(
-      energy_num, unique(energy_num), unique(energy_lbl), ordered=T))
-
-# tibble(
-#   ter = unique(wind_sf$territory),
-#   caption = sprintf()
-
-ter = 'Hawaii'
-fig = sprintf('figs/mapWave_%s.pdf', str_replace_all(ter,' ','-'))
-map_energy_sf(
-  energy_sf = wave_sf,
-  ter = ter,
-  legend_title = 'Wave\nenergy\n(kW/m)',
-  redo = T,
-  fig = fig)
-system(sprintf('open %s', fig))
-```
-
-
-```{r mapWave for ter in wave}
-for (ter in unique(wave_sf$territory)){
-    # ter = 'Hawaii'
-  fig = sprintf('figs/mapWave_%s.pdf', str_replace_all(ter,' ','-'))
-  map_energy_sf(
-    energy_sf = wave_sf,
-    ter = ter,
-    legend_title = 'Wave\nenergy\n(kW/m)',
-    redo = T,
-    fig = fig)
-  system(sprintf('open %s', fig))
-}
-```
-
-```{r mapWave leaflet, eval=F}
-# wave read, clean, dissolve internal polys, 
-wave = read_sf(wave_geo) %>% 
-  as('Spatial') %>% 
-  clgeo_Clean() %>%
-  st_as_sf() %>%
-  filter(
-    !is.na(territory)) %>%
-  mutate(
-    energy = factor(energy_num, labels=unique(energy_lbl), ordered=T)) %>%
-  group_by(territory, energy) %>%
-  summarise() # mapview(wave, zcol='energy')
-
-pal = colorFactor('Spectral', wave$energy, reverse=T)
-
-leaflet(wave %>% filter(territory=='East')) %>% 
-  addProviderTiles('Esri.OceanBasemap') %>%
-  addPolygons(
-    color="#444444", weight = 1, smoothFactor = 0.5,
-    opacity = 1.0, fillOpacity = 0.5,
-    fillColor = ~pal(energy),
-    label = ~sprintf(
-      "<strong>%s</strong>: %s kW/m<sup>2</sup>",
-      territory, energy) %>% lapply(HTML),
-    highlightOptions = highlightOptions(
-      color = "white", weight = 2, bringToFront = T)) %>%
-  addLegend(pal=pal, values=~energy, title='Wave Energy (kW/m)')
-# TODO: fix overlap w/ GoMex vs East and Puerto Rico vs US Virgin Islands
-```
-
-
-```{r tblWave}
-fmt_tbl(
-  csv=tide_cbls_csv, energy_hdr='Wave Energy (kW/m)',
-  caption='Constraints of cable (minimum - recommended) categories of wave energy (m/s) at 90m hub height.')
-```
-
-- [plotly - stacked bar chart](https://plot.ly/r/bar-charts/#stacked-bar-chart)
-- [plotly - horizontal bar chart](https://plot.ly/r/horizontal-bar-charts/#colored-horizontal-bar-chart)
-- [plotly - percentages bar chart](https://plot.ly/ggplot2/geom_bar/#precentages)
-
-```{r pltWave}
-p = plot_cbls(
-  csv   = wave_cbls_csv, 
-  title = 'Wave Energy by Area and Power Class per US Territory',
-  xlab  = 'Wave energy (kW/m)')
-
-#plot_list = lapply(unique(d_p$territory), plot_wave)
-if (out_html){
-  #htmltools::tagList(lapply(plot_list, ggplotly))
-  # individual: plot_wave('ALL') %>% ggplotly()
-  
-  #p %>% ggplotly()
-  p %>% print()
-} else {
-  #invisible(lapply(plot_list, print))
-  p %>% print()
-}
-```
-
-### Tidal
-
-units: mean power (W/m^2)
-
-TODO: seperate tif into east and west for display in leaflet
-
-```{r mapTide leaflet, eval=F}
-#tide = raster(tide_tif)
-#plot(tide_tif)
-# TODO: in report.Rmd, leaflet viz tide rasters per territory w/ regex in data/tide_ter-*.tif
-
-tide_ter_tif = '/Users/bbest/github/nrel-cables/data/tide_ter-East.tif'
-r = raster(tide_ter_tif)
-plot(r)
-r_l = projectRasterForLeaflet(r)
-plot(r_l)
-
-#pal <- colorNumeric('Spectral', values(r_l), na.color='transparent', reverse=T)
-#brks = c(0,500,1000,1500,10753)
-pal = colorBin(
-  'Spectral', values(r_l), bins =c(0,500,1000,1500,11000), 
-  pretty=T, na.color='transparent', reverse=T)
-
-leaflet() %>% 
-  addProviderTiles('Esri.OceanBasemap') %>%
-  addRasterImage(r_l, colors=pal, opacity=0.8, project=F) %>%
-  addLegend(pal=pal, values=values(r_l), title='Tidal Energy (W/m^2)')
-```
-
-
-```{r map_tide, eval=T}
-
-territories = read_csv(tide_cbls_csv) %>% 
-  filter(territory !='ALL') %>% 
-  .$territory %>% unique()
-
-map_tide = function(
-  ter,
-  legend_title,
-  redo,
-  fig){
-  # ter = 'Alaska'; fig = sprintf('figs/mapTide_%s.pdf', str_replace_all(ter,' ','-')); legend_title = 'Tidal\npower\n(W/m2)'; redo = T
-  
-  if (!file.exists(fig) | redo){
-    
-    ter_str = str_replace_all(ter, ' ', '-')
-    tif = sprintf('../data/tide_ter-%s.tif', ter_str)
-    r = raster(tif)
-
-    #d = energy_sf %>% 
-    #  filter(territory==ter)
-    eez = usa_eez %>%
-      filter(territory==ter)
-    cables = lns_d1x %>%
-      filter(territory==ter)
-    cables2 = dx2 %>%
-      filter(territory==ter)
-    cables3 = dx3 %>%
-      filter(territory==ter)
-    
-    bb = bbox(r)
-    bb = c(xmin=bb[1,1], xmax=bb[1,2], ymin=bb[2,1], ymax=bb[2,2])
-    # TODO: st_cast(x=st_bbox, to=st_polygon)                 
-    bb_ply = st_sf(
-      tibble(
-        territory = ter,
-        geom = st_sfc(st_polygon(list(rbind(
-          c(bb['xmin'], bb['ymin']),
-          c(bb['xmax'], bb['ymin']),
-          c(bb['xmax'], bb['ymax']),
-          c(bb['xmin'], bb['ymax']),
-          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
-    earth = land %>%
-      filter(
-        st_intersects(land, bb_ply, sparse=F)[,1])
-
-    # https://nrelscience.org/2013/05/30/this-is-how-i-did-it-mapping-in-r-with-ggplot2/
-    d = as.data.frame(r, xy=T) %>% as_tibble()
-    colnames(d) <- c('lon','lat','value')
-    d = d %>% filter(!is.na(value))
-    
-    p = ggplot() + 
-      geom_raster(data=d, aes(x=lon, y=lat, fill=value)) + 
-      scale_fill_gradientn(
-        legend_title,
-        colours=rev(brewer.pal(11,'YlGnBu')),
-        limits=c(0,cellStats(r, 'max')),
-        na.value = 'transparent') +
-      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
-      geom_sf(data=eez, fill=NA, color='gray40') +
-      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
-      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
-      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
-      coord_sf(
-        xlim=bb[c('xmin','xmax')], 
-        ylim=bb[c('ymin','ymax')]) +
-      theme(
-        legend.background = element_rect(fill='grey90'),
-        axis.title.x=element_blank(),
-        axis.title.y=element_blank(),  
-        legend.key = element_blank())
-      
-    pdf(fig, width=6.5, height=5)
-    print(p)
-    dev.off()
-    
-  }
   #system(sprintf('open %s', fig))
-  knitr::include_graphics(fig)
+  #knitr::include_graphics(fig)
 }
-
-# ter = 'Hawaii'
-# fig = sprintf('figs/mapWave_%s.pdf', str_replace_all(ter,' ','-'))
-# map_energy_sf(
-#   energy_sf = wave_sf,
-#   ter = ter,
-#   legend_title = 'Wave\nEnergy\n(kW/m)',
-#   redo = T,
-#   fig = fig)
-# system(sprintf('open %s', fig))
+knitr::include_graphics(sprintf('figs/mapWind_%s.pdf', str_replace_all(unique(wind_sf$territory),' ','-')))
 ```
 
-
-```{r mapTide for ter in tide}
-territories = read_csv(tide_cbls_csv) %>% 
-  filter(territory !='ALL') %>% 
-  .$territory %>% unique()
-
-for (ter in territories){
-    # ter = 'Hawaii'
-  fig = sprintf('figs/mapTide_%s.pdf', str_replace_all(ter,' ','-'))
-  map_tide(
-    ter = ter,
-    legend_title = 'Tidal\npower\n(W/m2)',
-    fig = fig,
-    redo = T)
-  system(sprintf('open %s', fig))
-}
+```{r srcTerritoryTemplate, include=F, eval=T}
+src <- lapply(sort(unique(lns_d1x$territory)), function(ter) knit_expand(file='territory_template.Rmd'))
 ```
 
-```{r tblTide}
-fmt_tbl(
-  csv        = tide_cbls_csv, 
-  energy_hdr = 'Tidal power (W/m2)',
-  caption    = 'Constraints of cable (minimum - recommended) categories of tidal 
-  energy (W/m2) at 90m hub height.')
-```
+`r knit(text = unlist(src))`
 
-```{r pltTide}
-plot_cbls(
-  csv   = tide_cbls_csv, 
-  title = 'Tidal Energy by Area and Power Class per US Territory',
-  xlab  = 'Tidal power (W/m2)',
-  legend_position      = c(1,1),
-  legend_justification = c(1,1))
-```
-
-
-## Detailed Maps by US Territory of Cables and Renewable Energy
-
-### Alaska
-
-TODO: mapCablesEez()
-
-#### Wind
-
-TODO: mapCablesEez()
-
-#### Wave
-
-
+# Conclusions
 
 ## Next Steps
 
@@ -949,10 +873,6 @@ Musial et al (2016):
 - distance to shore (nm) -- Table B-2 (p. 50): <3, 3-12, 12-50, 50-200, total
 
 - by states
-
-
-
-# Conclusions
 
 ## Communication with Stakeholders
 

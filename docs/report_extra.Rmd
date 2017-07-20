@@ -109,6 +109,13 @@ map_cbls()
 
 ### Wind
 
+TODO:
+- [Visualise sf objects — ggsf • ggplot2](http://ggplot2.tidyverse.org/reference/ggsf.html)
+
+- [plotly - stacked bar chart](https://plot.ly/r/bar-charts/#stacked-bar-chart)
+- [plotly - horizontal bar chart](https://plot.ly/r/horizontal-bar-charts/#colored-horizontal-bar-chart)
+- [plotly - percentages bar chart](https://plot.ly/ggplot2/geom_bar/#precentages)
+
 ```{r land selectFeatures}
 # resolve land / eez mismatch of borders by filling in eez not high seas
     
@@ -309,4 +316,85 @@ wave_sf = wave_sf %>%
     mutate(geometry = (geometry + c(360,90)) %% c(360) - c(0,90)) %>% 
     st_set_crs(crs_gcs_w)
 ```
+
+### Wave
+
+```{r pltWave, fig.cap='Wave energy (kW/m) and area per US territory with cable overlay (minimum - recommended %).'}
+plot_cbls(
+  csv   = wave_cbls_csv,
+  #title = 'Wave Energy by Area and Power Class per US Territory',
+  xlab  = 'Wave energy (kW/m)')
+
+#plot_list = lapply(unique(d_p$territory), plot_wave)
+if (out_html){
+  #htmltools::tagList(lapply(plot_list, ggplotly))
+  # individual: plot_wave('ALL') %>% ggplotly()
+  
+  #p %>% ggplotly()
+  p %>% print()
+} else {
+  #invisible(lapply(plot_list, print))
+  p %>% print()
+}
+```
+
+```{r mapWave leaflet, eval=F}
+# wave read, clean, dissolve internal polys, 
+wave = read_sf(wave_geo) %>% 
+  as('Spatial') %>% 
+  clgeo_Clean() %>%
+  st_as_sf() %>%
+  filter(
+    !is.na(territory)) %>%
+  mutate(
+    energy = factor(energy_num, labels=unique(energy_lbl), ordered=T)) %>%
+  group_by(territory, energy) %>%
+  summarise() # mapview(wave, zcol='energy')
+
+pal = colorFactor('Spectral', wave$energy, reverse=T)
+
+leaflet(wave %>% filter(territory=='East')) %>% 
+  addProviderTiles('Esri.OceanBasemap') %>%
+  addPolygons(
+    color="#444444", weight = 1, smoothFactor = 0.5,
+    opacity = 1.0, fillOpacity = 0.5,
+    fillColor = ~pal(energy),
+    label = ~sprintf(
+      "<strong>%s</strong>: %s kW/m<sup>2</sup>",
+      territory, energy) %>% lapply(HTML),
+    highlightOptions = highlightOptions(
+      color = "white", weight = 2, bringToFront = T)) %>%
+  addLegend(pal=pal, values=~energy, title='Wave Energy (kW/m)')
+# TODO: fix overlap w/ GoMex vs East and Puerto Rico vs US Virgin Islands
+```
+
+### Tidal
+
+units: mean power (W/m^2)
+
+TODO: seperate tif into east and west for display in leaflet
+
+```{r mapTide leaflet, eval=F}
+#tide = raster(tide_tif)
+#plot(tide_tif)
+# TODO: in report.Rmd, leaflet viz tide rasters per territory w/ regex in data/tide_ter-*.tif
+
+tide_ter_tif = '/Users/bbest/github/nrel-cables/data/tide_ter-East.tif'
+r = raster(tide_ter_tif)
+plot(r)
+r_l = projectRasterForLeaflet(r)
+plot(r_l)
+
+#pal <- colorNumeric('Spectral', values(r_l), na.color='transparent', reverse=T)
+#brks = c(0,500,1000,1500,10753)
+pal = colorBin(
+  'Spectral', values(r_l), bins =c(0,500,1000,1500,11000), 
+  pretty=T, na.color='transparent', reverse=T)
+
+leaflet() %>% 
+  addProviderTiles('Esri.OceanBasemap') %>%
+  addRasterImage(r_l, colors=pal, opacity=0.8, project=F) %>%
+  addLegend(pal=pal, values=values(r_l), title='Tidal Energy (W/m^2)')
+```
+
 
