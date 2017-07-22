@@ -374,6 +374,12 @@ dx2     = read_sf(dx2_geo)
 dx3     = read_sf(dx3_geo)
 ```
 
+# Summary
+
+- extended into 12 seperately analyzed territories
+TODO:
+- of # miles (# km) in original shapefile, 
+
 # Background
 
 Demand for abundant and diverse resources in the oceans is growing, necessitating marine spatial planning. To inform development of Marine Hydrokinetic (MHK) and Offshore Wind (OSW) resources, DOE has asked NREL to identify — and mitigate where possible — the competing uses between MHK/OSW technologies and subsea power/telecoms cables. The first step in this work is to identify and quantify the overlap between the MHK/OSW resource availability and existing cable routes. Several publicly available data layers are available that identify cable routes (e.g. MarineCadastre.gov currently hosts an offshore cables geographical information system (GIS) data layer) and MHK/OSW resource density (MHK Atlas, Wind Prospector). The cable route linear features, however, do not indicate the setback distance necessary to accommodate subsea cable maintenance requirements. Preliminary work was done within NREL to evaluate the influence of subsea cable setback distance on the overlap with MHK/OSW for the west coast of the U.S [@amante_offshore_2016]. Industry reports [@communicationssecurityreliabilityandinteroperabilitycounciliv_clustering_2016; @communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014] from the International Cable Protection Committee (ICPC) of the North American Submarine Cable Association (NASCA; [n-a-s-c-a.org](https://www.n-a-s-c-a.org/)) advise on setback distances that inform this analysis.

@@ -7,8 +7,19 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-TODO:
+# TODO
 
+## High Priority
+- get # cables mi/km before/after analysis
+
+## Low Priority
+- fix land: US Virgin Islands (Puerto Rico?) and redo maps
+- simplify eez+land for PDF maps
+- simplify cable polys for PDF maps
+
+
+
+# Old TODO References
 * [python - Shapely polygons crossing the antimeridian - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/226605/shapely-polygons-crossing-the-antimeridian)
 * [r - Use different center than the prime meridian in plotting a world map - Stack Overflow](https://stackoverflow.com/questions/10620862/use-different-center-than-the-prime-meridian-in-plotting-a-world-map)
 * [ogr - How to change shapefile longitude from -180 - 180 to 0 - 360? - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/79447/how-to-change-shapefile-longitude-from-180-180-to-0-360)
