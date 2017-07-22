@@ -14,6 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Low Priority
 - fix land: US Virgin Islands (Puerto Rico?) and redo maps
+- add depth (raster or contours) to ter cable maps
 - simplify eez+land for PDF maps
 - simplify cable polys for PDF maps
 

@@ -48,6 +48,7 @@ usa_rgn_kml   = '../data/usa_rgn.kmz'
 lns_d1x_geo   = '../data/lns_d1x.geojson'
 lns_d1x_rgn_geo = '../data/lns_d1x_rgn.geojson'
 lns_rgn_geo   = '../data/lns_rgn.geojson'
+usa_dx_csv    = '../data/usa_lnsdx_ter.csv'
 dx2_geo       = sprintf('../data/buf_2xdepth_incr%sm.geojson', d_incr)
 dx3_geo       = sprintf('../data/buf_3xdepth_incr%sm.geojson', d_incr)
 dx2_kml       = '../data/buf_2xdepth_incr100m.kml'

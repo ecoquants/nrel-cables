@@ -1,13 +1,21 @@
 ---
 title: "Submarine Cable Analysis for Marine Renewable Energy Development"
+author:
+- Benjamin D. Best ^1^
+- Levi F. Kilcher ^2^
+date: |
+  | ^1^: EcoQuants LLC, Santa Barbara, CA
+  | ^2^: National Renewable Energy Lab, Golden, CO \newline
+  | `r format(Sys.time(), '%Y-%m-%d')`
 csl: apa.csl
 output:
   bookdown::pdf_document2:
+    number_sections: no
     keep_tex: yes
     toc: yes
     toc_depth: 4
   bookdown::html_document2:
-    number_sections: yes
+    number_sections: no
     toc: yes
     toc_depth: 4
     toc_float: yes
@@ -28,6 +36,8 @@ source('./packages_vars.R')
 #opts_chunk$set(warning=F, message=F)
 opts_chunk$set(warning=F, message=F, eval=T) # DEBUG
 fig_type = 'png' # 'png','pdf','html'
+fig_dpi = 300
+redo = F
 
 if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_knit$get("rmarkdown.pandoc.to") == 'html'){
   out_html = T
@@ -66,13 +76,13 @@ fmt_tbl = function(csv, energy_hdr, caption){
       tr(
         th(rowspan=2, 'Territory'),
         th(rowspan=2, energy_hdr),
-        th(rowspan=2, 'Area (km2)'),
+        th(rowspan=2, HTML('Area (km<sup>2</sup>)')),
         th(colspan=2, 'Min. Cable (2z)'),
         th(colspan=2, 'Rec. Cable (3z)')),
       tr(
-        th('Area (km2)'),
+        th(HTML('Area (km<sup>2</sup>)')),
         th('(%)'),
-        th('Area (km2)'),
+        th(HTML('Area (km<sup>2</sup>)')),
         th('(%)')))))
 
   d %>%
@@ -164,9 +174,8 @@ fig_exists = function(fig){
 
 map_cable = function(
   ter,
-  legend_title,
-  redo,
-  fig){
+  fig,
+  redo){
   # ter = 'Hawaii'; fig = sprintf('figs/mapCable_%s', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = sprintf('Submarine cables within %s EEZ.', ter); redo = T
   
   fig_ext = sprintf('%s.%s', fig, fig_type)
@@ -208,13 +217,13 @@ map_cable = function(
     if (fig_type=='pdf'){
       pdf(fig_ext, width=6.5, height=5)
     }  else {
-      png(fig_ext)
+      png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
     }
     print(p)
     dev.off()
   }
   #system(sprintf('open %s', fig))
-  #knitr::include_graphics(fig)
+  #knitr::include_graphics(fig, dpi=fig_dpi)
 }
 
 map_energy_sf = function(
@@ -272,13 +281,13 @@ map_energy_sf = function(
     if (fig_type=='pdf'){
       pdf(fig_ext, width=6.5, height=5)
     }  else {
-      png(fig_ext)
+      png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
     }
     print(p)
     dev.off()
   }
   #system(sprintf('open %s', fig))
-  #knitr::include_graphics(fig)
+  #knitr::include_graphics(fig, dpi=fig_dpi)
 }
 
 map_tide = function(
@@ -351,15 +360,30 @@ map_tide = function(
     if (fig_type=='pdf'){
       pdf(fig_ext, width=6.5, height=5)
     }  else {
-      png(fig_ext)
+      png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
     }
     print(p)
     dev.off()
     
   }
   #system(sprintf('open %s', fig))
-  #knitr::include_graphics(fig_ext, auto_pdf=F)
+  #knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
 }
+
+# calculate length of cables / comment to speed up
+# lns_km = read_sf(lns_geo) %>%
+#   mutate(
+#     length = st_length(geometry)) %>%
+#   summarize(length_km = sum(length)/1000) %>% 
+#   .$length_km %>% as.numeric()
+# 
+# lns_d1x_km = lns_d1x %>%
+#   mutate(
+#     length = st_length(geometry)) %>%
+#   summarize(length_km = sum(length)/1000) %>% 
+#   .$length_km %>% as.numeric()
+lns_km = 230834.9
+lns_d1x_km = 97321.2
 
 # revert to old red-green-blue default color, not new viridis
 #   per https://github.com/tidyverse/ggplot2/blob/00ecd3670ef0f1c195bf4c6b5ada3b1895712f1c/NEWS.md#ggplot2-2219000
@@ -372,13 +396,16 @@ land    = read_sf(land_usaeez_geo)
 lns_d1x = read_sf(lns_d1x_rgn_geo)
 dx2     = read_sf(dx2_geo)
 dx3     = read_sf(dx3_geo)
+usa_dx = read_csv(usa_dx_csv)
 ```
 
 # Summary
 
-- extended into 12 seperately analyzed territories
-TODO:
-- of # miles (# km) in original shapefile, 
+Safe operation and maintenance of submarine cables may conflict with marine renewable energy development. Although submarine cable locations are publicly available, safe setback distances are not readily available for planning new marine renewable energy development.
+
+We applied industry advised depth-varying buffers to existing submarine cables: minimum (2\*depth, i.e. "2z") and recommended (3\*depth, i.e. "3z") with a mimimum of 500m. Of the original `r accounting(lns_km, digits=0)` km in the "NOAA Charted Submarine cables in the United States as of December 2012" dataset, `r accounting(lns_d1x_km, digits=0)` km fell within the 200 nm of the US exclusive economic zone (EEZ), which was analyzed across `r length(unique(lns_d1x$territory))` territories that overlapped with the cables. A custom Equal Area Albers projection based on 1/6th the territorial extent was applied to minimize spatial distortion when applying buffer distances at 100 m depth increments using the GEBCO 30 arc-second global grid. The cable buffer area ranged from `r hi = usa_dx %>% arrange(desc(cable3_pct)) %>% head(1); hi$cable3_pct %>% percent()` (`r hi$cable3_km2 %>% accounting(digits=0)` km^2^ [3z] of `r hi$area_km2 %>% accounting(digits=0)` km^2^ total) in the `r hi$territory` owing to many cables present and the steep continental shelf having high depths, to virtually nill `r lo = usa_dx %>% arrange(cable3_pct) %>% head(1); lo$cable2_pct %>% percent()` (`r lo$cable2_km2 %>% accounting(digits=0)` km^2^ [2z] of `r lo$area_km2 %>% accounting(digits=0)` km^2^ total) in `r lo$territory`.
+
+Overlap of cable buffers with marine renewable energy was assessed for tidal, wave and wind energy from NREL datasets...
 
 # Background
 
@@ -398,8 +425,9 @@ TODO: add citations to bibliography:
 
 - [MarineCadastre.gov cable metadata](https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html)
 
-See Table 1 and Figure \@ref(fig:mapCablesTerritories).
+See Table \@ref(tab:tblTerritories) and Figure \@ref(fig:mapCableTerritories).
 
+(\#tab:tblTerritories)
 ```{r tblTerritories}
 usa = read_sf(usa_rgn_s_geo)
 st_geometry(usa) = NULL # drop geometry column
@@ -416,12 +444,18 @@ tbl %>%
   formattable(list(
     `Area (km2)` = color_bar('lightgray'))) %>%
   as.datatable(
-    rownames = F, 
+    rownames = F,
     caption  = 'Table 1: Territories within the United States exclusive economic zone (EEZ) and having submarine cables.',
     options  = list(
       dom='t', # off: n_entries/search/paging/ordering
       pageLength = nrow(tbl), ordering=F,
       columnDefs = list(list(className='dt-right', targets=c(0,2)))))
+# format_table(
+#   tbl,
+#   formatters=list(
+#     `Area (km2)` = color_bar('lightgray')),
+#   format = 'pandoc',
+#   caption = 'Territories within the United States exclusive economic zone (EEZ) and having submarine cables.')
 ```
 
 ```{r mapCableTerritories, fig.cap='Map of NOAA Charted Submarine cables as of December 2012 within the exclusive economic zone (EEZ; 200 nm) of United States territories.'}
@@ -465,13 +499,13 @@ if (!file.exists(fig_ext) | redo){
   if (fig_type=='pdf'){
     pdf(fig_ext, width=6.5, height=5)
   }  else {
-    png(fig_ext)
+    png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
   }
   print(p)
   dev.off()
   #system(sprintf('open %s', fig))
 }
-knitr::include_graphics(fig_ext, auto_pdf=F)
+knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
 ```
 
 
@@ -604,15 +638,74 @@ if (!file.exists(fig_ext) | redo){
   if (fig_type=='pdf'){
     pdf(fig_ext, width=6.5, height=5)
   }  else {
-    png(fig_ext)
+    png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
   }
   print(p)
   dev.off()
   #system(sprintf('open %s', fig))
 }
-knitr::include_graphics(fig_ext, auto_pdf=F)
+knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
 ```
 
+See Table \@ref(tab:tblCableBufferTerritories).
+
+(\#tab:tblCableBufferTerritories)
+```{r tblCableBufferTerritories}
+caption  = 'Table 2: Overlap of Cable Buffers with US Territories.'
+
+ter_tbl = usa_eez
+st_geometry(ter_tbl) = NULL # drop geometry column
+
+tbl = ter_tbl %>%
+  left_join(
+    dx2 %>% 
+      rename(cable2_km2 = area_km2),
+    by='territory')%>%
+  left_join(
+    dx3 %>% 
+      rename(cable3_km2 = area_km2),
+    by='territory') %>%
+  mutate(
+    cable2_pct = cable2_km2 / area_km2,
+    cable3_pct = cable3_km2 / area_km2) %>%
+  select(
+    territory, area_km2,
+    cable2_km2, cable2_pct, cable3_km2, cable3_pct)
+write_csv(tbl, usa_dx_csv)
+
+hdr = withTags(table(
+  class = 'display',
+  thead(
+    tr(
+      th(rowspan=2, 'Territory'),
+      th(HTML('Area (km<sup>2</sup>)')),
+      th(colspan=2, 'Min. Cable (2z)'),
+      th(colspan=2, 'Rec. Cable (3z)')),
+    tr(
+      th(HTML('Area (km<sup>2</sup>)')),
+      th('(%)'),
+      th(HTML('Area (km<sup>2</sup>)')),
+      th('(%)')))))
+
+tbl %>%
+  mutate(
+    area_km2   = accounting(area_km2, digits=0),
+    cable2_km2 = accounting(cable2_km2, digits=0),
+    cable3_km2 = accounting(cable3_km2, digits=0),
+    cable2_pct = percent(cable2_km2 / area_km2, digits=1),
+    cable3_pct = percent(cable3_km2 / area_km2, digits=1)) %>%
+  formattable(
+    list(
+      area_km2   = color_bar('lightgray'),
+      cable2_km2 = color_bar('lightpink'),
+      cable3_km2 = color_bar('lightgreen'))) %>%
+  as.datatable(
+    rownames=F, container=hdr, caption=caption,
+    options = list(
+      dom='t', # off: n_entries/search/paging/ordering
+      pageLength = nrow(tbl), ordering=F,
+      columnDefs = list(list(className='dt-right', targets=1:5))))
+```
 
 Generated by:
 
@@ -696,6 +789,9 @@ p = ggplot(
 print(p)
 ```
 
+See Table \@ref(tab:tblEnergy).
+
+(\#tab:tblEnergy)
 ```{r tblEnergy}
 d = tbl_form_cbls
 energy_hdr = 'Amount'
@@ -733,16 +829,15 @@ hdr = htmltools::withTags(table(
   class = 'display',
   thead(
     tr(
-      th(colspan=2, 'Energy'),
-      th(rowspan=2, 'Area (km2)'),
+      th(rowspan=2, 'Energy'),
+      th(rowspan=2, 'Class'),
+      th(rowspan=2, HTML('Area (km<sup>2</sup>)')),
       th(colspan=2, 'Min. Cable (2z)'),
       th(colspan=2, 'Rec. Cable (3z)')),
     tr(
-      th('Form'),
-      th('Amount'),
-      th('Area (km2)'),
+      th(HTML('Area (km<sup>2</sup>)')),
       th('(%)'),
-      th('Area (km2)'),
+      th(HTML('Area (km<sup>2</sup>)')),
       th('(%)')))))
 
 d %>%
@@ -753,13 +848,24 @@ d %>%
       cable2_km2 = color_bar('lightpink'),
       cable3_km2 = color_bar('lightgreen'))) %>%
   as.datatable(
-    rownames=F, container=hdr, 
+    rownames=F, container=hdr,
     caption = caption,
     options = list(
       dom='t', # off: n_entries/search/paging/ordering
       pageLength = nrow(d), ordering=F,
       columnDefs = list(list(className='dt-right', targets=1:5))))
+
+# d %>%
+#   format_table(
+#     list(
+#       energy     = color_bar('lightblue'),
+#       area_km2   = color_bar('lightgray'),
+#       cable2_km2 = color_bar('lightpink'),
+#       cable3_km2 = color_bar('lightgreen')),
+#     caption=caption)
 ```
+
+See Table \@ref(tab:tblEnergy).
 
 ### Tidal
 
@@ -774,11 +880,14 @@ plot_cbls(
   legend_justification = c(1,1))
 ```
 
+See Table \@ref(tab:tblTide).
+
+(\#tab:tblTide)
 ```{r tblTide}
 fmt_tbl(
   csv        = tide_cbls_csv, 
   energy_hdr = 'Tidal power (W/m2)',
-  caption    = 'Table 5: Area overlap with cables for tidal power (W/m2) by territory.')
+  caption    = 'Table 3: Area overlap with cables for tidal power (W/m2) by territory.')
 ```
 
 ### Wave
@@ -792,6 +901,9 @@ plot_cbls(
   xlab  = 'Wave energy (kW/m)')
 ```
 
+See Table \@ref(tab:tblWave).
+
+(\#tab:tblWave)
 ```{r tblWave}
 fmt_tbl(
   csv        = wave_cbls_csv, 
@@ -814,27 +926,30 @@ plot_cbls(
   legend_position      = c(1,1))
 ```
 
+See Table \@ref(tab:tblWind).
+
+(\#tab:tblWind)
 ```{r tblWind}
 fmt_tbl(
   csv=wind_cbls_csv, energy_hdr='Wind Speed (m/s)',
-  caption='Table 3: Area overlap with cables for wind speed (m/s) at 90m hub height by territory.')
+  caption='Table 5: Area overlap with cables for wind speed (m/s) at 90m hub height by territory.')
 ```
 
 ## Detailed Maps by US Territory of Cable Buffer and Renewable Energy
 
-```{r mapCable, fig.cap='Maps of tidal energy.'}
+```{r mapCable}
 for (ter in sort(unique(lns_d1x$territory))){ # ter = 'Hawaii'
   fig = sprintf('figs/mapCable_%s', str_replace_all(ter,' ','-'))
   map_cable(
     ter = ter,
     fig = fig,
-    redo = F)
+    redo = redo)
   #system(sprintf('open %s', fig))
 }
-#knitr::include_graphics(sprintf('figs/mapCable_%s.pdf', str_replace_all(unique(lns_d1x$territory),' ','-')))
+#knitr::include_graphics(sprintf('figs/mapCable_%s.pdf', str_replace_all(unique(lns_d1x$territory),' ','-')), dpi=fig_dpi)
 ```
 
-```{r mapTide, fig.cap='Maps of tidal energy.'}
+```{r mapTide}
 territories = read_csv(tide_cbls_csv) %>% 
   filter(territory !='ALL') %>% 
   .$territory %>% unique()
@@ -844,13 +959,13 @@ for (ter in territories){ # ter = 'Hawaii'
     ter = ter,
     legend_title = 'Tidal\npower\n(W/m2)',
     fig = sprintf('figs/mapTide_%s', str_replace_all(ter,' ','-')),
-    redo = F)
+    redo = redo)
   #system(sprintf('open %s', fig))
 }
-#knitr::include_graphics(sprintf('figs/mapTide_%s.pdf', str_replace_all(territories,' ','-')))
+#knitr::include_graphics(sprintf('figs/mapTide_%s.pdf', str_replace_all(territories,' ','-')), dpi=fig_dpi)
 ```
 
-```{r mapWave, fig.cap='Maps of wave energy.'}
+```{r mapWave}
 wave_sf = read_sf(wave_geo) %>%
   filter(!is.na(territory)) %>%
   mutate(
@@ -862,15 +977,15 @@ for (ter in unique(wave_sf$territory)){ # ter = 'Hawaii'
     energy_sf = wave_sf,
     ter = ter,
     legend_title = 'Wave\nenergy\n(kW/m)',
-    redo = F,
+    redo = redo,
     fig = sprintf('figs/mapWave_%s', str_replace_all(ter,' ','-')))
   #system(sprintf('open %s', fig))
-  #knitr::include_graphics(fig)
+  #knitr::include_graphics(fig, dpi=fig_dpi)
 }
-#knitr::include_graphics(sprintf('figs/mapWave_%s.pdf', str_replace_all(unique(wave_sf$territory),' ','-')))
+#knitr::include_graphics(sprintf('figs/mapWave_%s.pdf', str_replace_all(unique(wave_sf$territory),' ','-')), dpi=fig_dpi)
 ```
 
-```{r mapWind, fig.cap='Maps of wind energy.'}
+```{r mapWind}
 wind_sf = read_sf(wind_geo) %>%
   arrange(energy_num) %>%
   mutate(
@@ -883,12 +998,12 @@ for (ter in unique(wind_sf$territory)){ # ter = 'Hawaii'
     energy_sf = wind_sf,
     ter = ter,
     legend_title = 'Wind\nspeed\n(m/s)',
-    redo = F,
+    redo = redo,
     fig = sprintf('figs/mapWind_%s', str_replace_all(ter,' ','-')))
   #system(sprintf('open %s', fig))
-  #knitr::include_graphics(fig)
+  #knitr::include_graphics(fig, dpi=fig_dpi)
 }
-#knitr::include_graphics(sprintf('figs/mapWind_%s.pdf', str_replace_all(unique(wind_sf$territory),' ','-')))
+#knitr::include_graphics(sprintf('figs/mapWind_%s.pdf', str_replace_all(unique(wind_sf$territory),' ','-')), dpi=fig_dpi)
 ```
 
 ```{r srcTerritoryTemplate, include=F}

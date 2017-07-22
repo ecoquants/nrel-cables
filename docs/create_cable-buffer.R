@@ -542,6 +542,16 @@ if(any(!file.exists(dx2_geo), !file.exists(dx3_geo), redo)){
   clean_geo(dx2_geo)
   clean_geo(dx3_geo)
   
+  # add area_km2
+  read_sf(dx2_geo) %>%
+    mutate(
+      area_km2 = st_area(geometry) / (1000 * 1000)) %>%
+    write_sf(dx2_geo, delete_dsn=T)
+  read_sf(dx3_geo) %>%
+    mutate(
+      area_km2 = st_area(geometry) / (1000 * 1000)) %>%
+    write_sf(dx3_geo, delete_dsn=T)
+  
   # time estimate for script: 73 min 
 }
 cat(sprintf('FINISHED -- %s\n', Sys.time()))
