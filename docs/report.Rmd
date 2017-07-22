@@ -13,6 +13,7 @@ output:
     toc_float: yes
   bookdown::word_document2:
     toc: yes
+    toc_depth: 4
 tables: yes
 bibliography: nrel-cables.bib
 ---
@@ -26,6 +27,7 @@ source('./packages_vars.R')
 
 #opts_chunk$set(warning=F, message=F)
 opts_chunk$set(warning=F, message=F, eval=T) # DEBUG
+fig_type = 'png' # 'png','pdf','html'
 
 if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_knit$get("rmarkdown.pandoc.to") == 'html'){
   out_html = T
@@ -153,17 +155,22 @@ plot_cbls = function(
       legend.position      = legend_position,
       axis.text.x = element_text(angle = 90, hjust = 1)) + 
     facet_wrap(~territory) # facet_wrap(~territory, scales='free_y') # facet_grid(. ~ territory)
-  p
+  print(p)
 }
+
+fig_exists = function(fig){ 
+  fig_ext = sprintf('%s.%s', fig, fig_type)
+  file.exists(fig_ext)}
 
 map_cable = function(
   ter,
   legend_title,
   redo,
   fig){
-  # ter = 'Hawaii'; fig = sprintf('figs/mapCable_%s.pdf', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = sprintf('Submarine cables within %s EEZ.', ter); redo = T
+  # ter = 'Hawaii'; fig = sprintf('figs/mapCable_%s', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = sprintf('Submarine cables within %s EEZ.', ter); redo = T
   
-  if (!file.exists(fig) | redo){
+  fig_ext = sprintf('%s.%s', fig, fig_type)
+  if (!file.exists(fig_ext) | redo){
     
     eez = usa_eez %>%
       filter(territory==ter)
@@ -198,7 +205,11 @@ map_cable = function(
         xlim=bb[c('xmin','xmax')], 
         ylim=bb[c('ymin','ymax')])
       
-    pdf(fig, width=6.5, height=5)
+    if (fig_type=='pdf'){
+      pdf(fig_ext, width=6.5, height=5)
+    }  else {
+      png(fig_ext)
+    }
     print(p)
     dev.off()
   }
@@ -212,9 +223,10 @@ map_energy_sf = function(
   legend_title,
   redo,
   fig){
-  # ter = 'Hawaii'; fig = sprintf('figs/mapWind_%s.pdf', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
+  # ter = 'Hawaii'; fig = sprintf('figs/mapWind_%s', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
   
-  if (!file.exists(fig) | redo){
+  fig_ext = sprintf('%s.%s', fig, fig_type)
+  if (!file.exists(fig_ext) | redo){
     
     d = energy_sf %>% 
       filter(territory==ter)
@@ -257,7 +269,11 @@ map_energy_sf = function(
         legend.background = element_rect(fill='grey90'),  
         legend.key = element_blank())
       
-    pdf(fig, width=6.5, height=5)
+    if (fig_type=='pdf'){
+      pdf(fig_ext, width=6.5, height=5)
+    }  else {
+      png(fig_ext)
+    }
     print(p)
     dev.off()
   }
@@ -270,9 +286,10 @@ map_tide = function(
   legend_title,
   redo,
   fig){
-  # ter = 'Alaska'; fig = sprintf('figs/mapTide_%s.pdf', str_replace_all(ter,' ','-')); legend_title = 'Tidal\npower\n(W/m2)'; redo = T
+  # ter = 'Alaska'; fig = sprintf('figs/mapTide_%s', str_replace_all(ter,' ','-')); legend_title = 'Tidal\npower\n(W/m2)'; redo = T
   
-  if (!file.exists(fig) | redo){
+  fig_ext = sprintf('%s.%s', fig, fig_type)
+  if (!file.exists(fig_ext) | redo){
     
     ter_str = str_replace_all(ter, ' ', '-')
     tif = sprintf('../data/tide_ter-%s.tif', ter_str)
@@ -331,13 +348,17 @@ map_tide = function(
         axis.title.y=element_blank(),  
         legend.key = element_blank())
       
-    pdf(fig, width=6.5, height=5)
+    if (fig_type=='pdf'){
+      pdf(fig_ext, width=6.5, height=5)
+    }  else {
+      png(fig_ext)
+    }
     print(p)
     dev.off()
     
   }
   #system(sprintf('open %s', fig))
-  knitr::include_graphics(fig)
+  #knitr::include_graphics(fig_ext, auto_pdf=F)
 }
 
 # revert to old red-green-blue default color, not new viridis
@@ -397,10 +418,10 @@ tbl %>%
       columnDefs = list(list(className='dt-right', targets=c(0,2)))))
 ```
 
-
 ```{r mapCableTerritories, fig.cap='Map of NOAA Charted Submarine cables as of December 2012 within the exclusive economic zone (EEZ; 200 nm) of United States territories.'}
-fig = 'figs/mapCableTerritories.pdf' # redo=T
-if (!file.exists(fig) | redo){
+fig = 'figs/mapCableTerritories' # redo=T
+fig_ext = sprintf('%s.%s', fig, fig_type) # redo=T
+if (!file.exists(fig_ext) | redo){
 
   cables = read_sf(lns_geo) %>%                      # cables
     mutate(
@@ -435,13 +456,18 @@ if (!file.exists(fig) | redo){
       axis.title.x=element_blank(),
       axis.title.y=element_blank())
 
-  pdf(fig, width=6.5, height=5)
+  if (fig_type=='pdf'){
+    pdf(fig_ext, width=6.5, height=5)
+  }  else {
+    png(fig_ext)
+  }
   print(p)
   dev.off()
   #system(sprintf('open %s', fig))
 }
-knitr::include_graphics(fig)
+knitr::include_graphics(fig_ext, auto_pdf=F)
 ```
+
 
 ## Depth
 
@@ -526,8 +552,9 @@ A depth-varying buffer to the offshore cables, 2 \* depth for "minimum" and 3 \*
 ## Cable Buffer
 
 ```{r mapCableBuffers, fig.cap='Map of submarine cable buffers within the exclusive economic zone (EEZ; 200 nm) of United States territories. In order to see the area covered by the buffers, please visit the Detailed Maps section.'}
-fig = 'figs/mapCableBuffers.pdf' # redo=T
-if (!file.exists(fig) | redo){
+fig = 'figs/mapCableBuffers'
+fig_ext = sprintf('%s.%s', fig, fig_type) # redo=T
+if (!file.exists(fig_ext) | redo){
 
   cables = read_sf(lns_rgn_geo) %>%                      # cables
     mutate(
@@ -568,12 +595,16 @@ if (!file.exists(fig) | redo){
       axis.title.x=element_blank(),
       axis.title.y=element_blank())
 
-  pdf(fig, width=6.5, height=5)
+  if (fig_type=='pdf'){
+    pdf(fig_ext, width=6.5, height=5)
+  }  else {
+    png(fig_ext)
+  }
   print(p)
   dev.off()
   #system(sprintf('open %s', fig))
 }
-knitr::include_graphics(fig)
+knitr::include_graphics(fig_ext, auto_pdf=F)
 ```
 
 
@@ -724,6 +755,26 @@ d %>%
       columnDefs = list(list(className='dt-right', targets=1:5))))
 ```
 
+### Tidal
+
+units: mean power (W/m^2)
+
+```{r pltTide, fig.cap='Tidal power (W/m2) and area per US territory with cable overlay (minimum - recommended %).'}
+plot_cbls(
+  csv   = tide_cbls_csv, 
+  #title = 'Tidal Energy by Area and Power Class per US Territory',
+  xlab  = 'Tidal power (W/m2)',
+  legend_position      = c(1,1),
+  legend_justification = c(1,1))
+```
+
+```{r tblTide}
+fmt_tbl(
+  csv        = tide_cbls_csv, 
+  energy_hdr = 'Tidal power (W/m2)',
+  caption    = 'Table 5: Area overlap with cables for tidal power (W/m2) by territory.')
+```
+
 ### Wave
 
 units: wave energy flux (kW/m)
@@ -763,61 +814,37 @@ fmt_tbl(
   caption='Table 3: Area overlap with cables for wind speed (m/s) at 90m hub height by territory.')
 ```
 
-### Tidal
-
-units: mean power (W/m^2)
-
-```{r pltTide, fig.cap='Tidal power (W/m2) and area per US territory with cable overlay (minimum - recommended %).'}
-plot_cbls(
-  csv   = tide_cbls_csv, 
-  #title = 'Tidal Energy by Area and Power Class per US Territory',
-  xlab  = 'Tidal power (W/m2)',
-  legend_position      = c(1,1),
-  legend_justification = c(1,1))
-```
-
-```{r tblTide}
-fmt_tbl(
-  csv        = tide_cbls_csv, 
-  energy_hdr = 'Tidal power (W/m2)',
-  caption    = 'Table 5: Area overlap with cables for tidal power (W/m2) by territory.')
-```
-
 ## Detailed Maps by US Territory of Cable Buffer and Renewable Energy
 
-```{r mapCable, fig.cap='Maps of tidal energy.', eval=F}
-for (ter in ){
-    # ter = 'Hawaii'
-  fig = sprintf('figs/mapCable_%s.pdf', str_replace_all(ter,' ','-'))
+```{r mapCable, fig.cap='Maps of tidal energy.'}
+for (ter in sort(unique(lns_d1x$territory))){ # ter = 'Hawaii'
+  fig = sprintf('figs/mapCable_%s', str_replace_all(ter,' ','-'))
   map_cable(
     ter = ter,
     fig = fig,
     redo = F)
   #system(sprintf('open %s', fig))
 }
-knitr::include_graphics(sprintf('figs/mapCable_%s.pdf', str_replace_all(unique(lns_d1x$territory),' ','-')))
+#knitr::include_graphics(sprintf('figs/mapCable_%s.pdf', str_replace_all(unique(lns_d1x$territory),' ','-')))
 ```
 
-```{r mapTide, fig.cap='Maps of tidal energy.', eval=F}
+```{r mapTide, fig.cap='Maps of tidal energy.'}
 territories = read_csv(tide_cbls_csv) %>% 
   filter(territory !='ALL') %>% 
   .$territory %>% unique()
 
-for (ter in territories){
-    # ter = 'Hawaii'
-  fig = sprintf('figs/mapTide_%s.pdf', str_replace_all(ter,' ','-'))
+for (ter in territories){ # ter = 'Hawaii'
   map_tide(
     ter = ter,
     legend_title = 'Tidal\npower\n(W/m2)',
-    fig = fig,
+    fig = sprintf('figs/mapTide_%s', str_replace_all(ter,' ','-')),
     redo = F)
   #system(sprintf('open %s', fig))
 }
-
-knitr::include_graphics(sprintf('figs/mapTide_%s.pdf', str_replace_all(territories,' ','-')))
+#knitr::include_graphics(sprintf('figs/mapTide_%s.pdf', str_replace_all(territories,' ','-')))
 ```
 
-```{r mapWave, fig.cap='Maps of wave energy.', eval=F}
+```{r mapWave, fig.cap='Maps of wave energy.'}
 wave_sf = read_sf(wave_geo) %>%
   filter(!is.na(territory)) %>%
   mutate(
@@ -825,20 +852,19 @@ wave_sf = read_sf(wave_geo) %>%
       energy_num, unique(energy_num), unique(energy_lbl), ordered=T))
 
 for (ter in unique(wave_sf$territory)){ # ter = 'Hawaii'
-  fig = sprintf('figs/mapWave_%s.pdf', str_replace_all(ter,' ','-'))
   map_energy_sf(
     energy_sf = wave_sf,
     ter = ter,
     legend_title = 'Wave\nenergy\n(kW/m)',
     redo = F,
-    fig = fig)
+    fig = sprintf('figs/mapWave_%s', str_replace_all(ter,' ','-')))
   #system(sprintf('open %s', fig))
   #knitr::include_graphics(fig)
 }
-knitr::include_graphics(sprintf('figs/mapWave_%s.pdf', str_replace_all(unique(wave_sf$territory),' ','-')))
+#knitr::include_graphics(sprintf('figs/mapWave_%s.pdf', str_replace_all(unique(wave_sf$territory),' ','-')))
 ```
 
-```{r mapWind, fig.cap='Maps of wind energy.', eval=F}
+```{r mapWind, fig.cap='Maps of wind energy.'}
 wind_sf = read_sf(wind_geo) %>%
   arrange(energy_num) %>%
   mutate(
@@ -846,23 +872,35 @@ wind_sf = read_sf(wind_geo) %>%
       energy_num, unique(energy_num), unique(energy_lbl), ordered=T)) %>%
   arrange(region, energy)
 
-for (ter in unique(wind_sf$territory)){
-    # ter = 'Hawaii'
-  fig = sprintf('figs/mapWind_%s.pdf', str_replace_all(ter,' ','-'))
+for (ter in unique(wind_sf$territory)){ # ter = 'Hawaii'
   map_energy_sf(
     energy_sf = wind_sf,
     ter = ter,
     legend_title = 'Wind\nspeed\n(m/s)',
-    redo = T,
-    fig = fig)
-  system(sprintf('open %s', fig))
+    redo = F,
+    fig = sprintf('figs/mapWind_%s', str_replace_all(ter,' ','-')))
+  #system(sprintf('open %s', fig))
   #knitr::include_graphics(fig)
 }
 #knitr::include_graphics(sprintf('figs/mapWind_%s.pdf', str_replace_all(unique(wind_sf$territory),' ','-')))
 ```
 
-```{r srcTerritoryTemplate, include=F, eval=T}
-src <- lapply(sort(unique(lns_d1x$territory)), function(ter) knit_expand(file='territory_template.Rmd'))
+```{r srcTerritoryTemplate, include=F}
+src = lapply(
+  sort(unique(lns_d1x$territory)), 
+  function(
+    ter,
+    ter_hyp   = str_replace_all(ter, ' ', '-'),
+    ter_str   = str_replace_all(ter, ' ', ''),
+    map_cable = sprintf('figs/mapCable_%s.%s', ter_hyp, fig_type),
+    map_tide  = sprintf('figs/mapTide_%s.%s', ter_hyp, fig_type),
+    map_wave  = sprintf('figs/mapWave_%s.%s', ter_hyp, fig_type),
+    map_wind  = sprintf('figs/mapWind_%s.%s', ter_hyp, fig_type),
+    has_tide  = file.exists(map_tide),
+    has_wave  = file.exists(map_wave),
+    has_wind  = file.exists(map_wind)){
+      knit_expand(file='territory_template.Rmd')})
+# write_lines(src, 'test_src.Rmd')
 ```
 
 `r knit(text = unlist(src))`
