@@ -409,4 +409,24 @@ leaflet() %>%
   addLegend(pal=pal, values=values(r_l), title='Tidal Energy (W/m^2)')
 ```
 
+# Conclusions
 
+## Next Steps
+
+- stacked histogram by cbl2/(cbl3-cbl2)/other; hist(wind$Speed_90)
+
+- simplify as native geojson
+
+Musial et al (2016):
+
+- wind speed (m/s) -- Table A-3 (p. 48): <7, 7-8, 8-9, 9-10, 10-11, total
+
+- depth classes (m) -- Table B-1 (p. 49): <30, 30-60, 60-700, 700-1000, >1000, total
+
+- distance to shore (nm) -- Table B-2 (p. 50): <3, 3-12, 12-50, 50-200, total
+
+- by states
+
+## Communication with Stakeholders
+
+Products will be online and readily digestable by stakeholders.

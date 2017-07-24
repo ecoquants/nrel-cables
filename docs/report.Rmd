@@ -4,10 +4,9 @@ author:
 - Benjamin D. Best ^1^
 - Levi F. Kilcher ^2^
 date: |
-  | ^1^: EcoQuants LLC, Santa Barbara, CA
+  | ^1^: EcoQuants, Santa Barbara, CA
   | ^2^: National Renewable Energy Lab, Golden, CO \newline
   | `r format(Sys.time(), '%Y-%m-%d')`
-csl: apa.csl
 output:
   bookdown::pdf_document2:
     number_sections: no
@@ -22,7 +21,7 @@ output:
   bookdown::word_document2:
     toc: yes
     toc_depth: 4
-tables: yes
+csl: energy-efficiency.csl
 bibliography: nrel-cables.bib
 ---
 
@@ -34,7 +33,7 @@ if (basename(getwd()) == 'nrel-cables') setwd('docs')
 source('./packages_vars.R')
 
 #opts_chunk$set(warning=F, message=F)
-opts_chunk$set(warning=F, message=F, eval=T) # DEBUG
+opts_chunk$set(warning=F, message=F, eval=T, cache=T) # DEBUG
 fig_type = 'png' # 'png','pdf','html'
 fig_dpi = 300
 redo = F
@@ -399,13 +398,13 @@ dx3     = read_sf(dx3_geo)
 usa_dx = read_csv(usa_dx_csv)
 ```
 
-# Summary
+# Executive Summary
 
-Safe operation and maintenance of submarine cables may conflict with marine renewable energy development. Although submarine cable locations are publicly available, safe setback distances are not readily available for planning new marine renewable energy development.
+Operation and maintenance of submarine cables may conflict with marine renewable energy development. Although submarine cable locations are publicly available, safe setback distances are not readily available for planning new marine renewable energy development.
 
-We applied industry advised depth-varying buffers to existing submarine cables: minimum (2\*depth, i.e. "2z") and recommended (3\*depth, i.e. "3z") with a mimimum of 500m. Of the original `r accounting(lns_km, digits=0)` km in the "NOAA Charted Submarine cables in the United States as of December 2012" dataset, `r accounting(lns_d1x_km, digits=0)` km fell within the 200 nm of the US exclusive economic zone (EEZ), which was analyzed across `r length(unique(lns_d1x$territory))` territories that overlapped with the cables. A custom Equal Area Albers projection based on 1/6th the territorial extent was applied to minimize spatial distortion when applying buffer distances at 100 m depth increments using the GEBCO 30 arc-second global grid. The cable buffer area ranged from `r hi = usa_dx %>% arrange(desc(cable3_pct)) %>% head(1); hi$cable3_pct %>% percent()` (`r hi$cable3_km2 %>% accounting(digits=0)` km^2^ [3z] of `r hi$area_km2 %>% accounting(digits=0)` km^2^ total) in the `r hi$territory` owing to many cables present and the steep continental shelf having high depths, to virtually nill `r lo = usa_dx %>% arrange(cable3_pct) %>% head(1); lo$cable2_pct %>% percent()` (`r lo$cable2_km2 %>% accounting(digits=0)` km^2^ [2z] of `r lo$area_km2 %>% accounting(digits=0)` km^2^ total) in `r lo$territory`.
+We applied industry-advised safety buffers that varied with depth to existing submarine cables for "minimum" (2\*depth, i.e. "2z") and "recommended" (3\*depth, i.e. "3z") horizontal distances, both having a minimum 500m buffer. Of the original `r accounting(lns_km, digits=0)` km in the "NOAA Charted Submarine cables in the United States as of December 2012" dataset (Figure \@ref(fig:mapCableTerritories)), `r accounting(lns_d1x_km, digits=0)` km fell within the 200 nm of the US exclusive economic zone (EEZ), which was analyzed across `r length(unique(lns_d1x$territory))` territories that overlapped with the cables (Figure \@ref(fig:mapCableBuffers)). A custom Equal Area Albers projection based on 1/6th the extent of each territory was individually applied to minimize spatial distortion when buffering distances at 100 m depth increments using the GEBCO 30 arc-second global grid. The cable buffer area ranged from `r hi = usa_dx %>% arrange(desc(cable3_pct)) %>% head(1); hi$cable3_pct %>% percent()` (`r hi$cable3_km2 %>% accounting(digits=0)` km^2^ [3z] of `r hi$area_km2 %>% accounting(digits=0)` km^2^ total) in the `r hi$territory` owing to many cables present and the steep continental shelf, to virtually nill `r lo = usa_dx %>% arrange(cable3_pct) %>% head(1); lo$cable2_pct %>% percent()` (`r lo$cable2_km2 %>% accounting(digits=0)` km^2^ [2z] of `r lo$area_km2 %>% accounting(digits=0)` km^2^ total) in `r lo$territory` (Table 2).
 
-Overlap of cable buffers with marine renewable energy was assessed for tidal, wave and wind energy from NREL datasets...
+Overlap of cable buffers with marine renewable energy was assessed for tidal, wave and wind energy from the National Renewable Energy Lab (NREL). Generally the highest proportion of energy is in the lower classes least likely for development where the highest area of overlap with cable buffers also exist (Figure \@ref(fig:pltEnergy); Table 3). The highest wind speed classes (10-11 & 11-12 m/s) are however also occupied by the highest percentage of cable buffer overlap (55.7% & 39.8% for 3z, 39.8% & 15.9% for 2z respectively). These uncommon high wind speed areas are limited to Hawaii and West territories (Table 6; Figure \@ref(fig:pltWind) for bargraph; Figure \@ref(fig:HawaiiMapWind) for Hawaii map; Figure \@ref(fig:WestMapWind) for West map). Overall wave energy has a bimodal distribution, most abundant in the lowest class (997,570 km^2^ for 0-10 kW/m) with a sharp drop at the next lowest class (292,692 km^2^ for 0-10 kW/m) and then ramping up to roughly half the lowest class in the highest class (532,533 km^2^ for >30 kW/m). Overlap with cable buffers for the highest two classes (20-30 & >30 kW/m) is just over 5% (5.2% & 5% for 2z, 6.8% & 6.7% for 3z). Similar to wind, these high energy wave classes are limited to the Pacific territories of Hawaii, West and  Alaska (wind for Alaska was not available) (Table 5; Figure \@ref(fig:pltWave) for bargraph; Figure \@ref(fig:HawaiiMapWave) for Hawaii map; Figure \@ref(fig:WestMapWave) for West map; Figure \@ref(fig:AlaskaMapWave) for Alaska map). Tidal power is extremely dominated by the lowest energy class of 0-500 W/m^2^ covering 403,781 km^2^, which is 99.6% of the total area assessed. The cable overlap for the rare higher energy areas is at most 20.1% (12 of 59 km^2^) for 500-1,000 W/m^2^ in the West and less than 3% for the even rarer higher energy classes of 1,000-1,500 or >1,500 found only in Alaska or the East.
 
 # Background
 
@@ -415,20 +414,9 @@ Demand for abundant and diverse resources in the oceans is growing, necessitatin
 
 ## Study Area and Submarine Cables
 
-The study area included the 200 nm extent of US waters downloaded from MarineRegions.org ^[MarineRegions.org US exclusive economic zone (EEZ) data, version World_EEZ_v9_20161021] and overlapping the offshore cable data layer available through MarineCadastre.gov ^[MarineCadastre.gov cable metadata: https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html]. See Figure \@ref(fig:mapStudyArea).
+The study area consisted of the US waters [@flandersmarineinstitute_maritime_2016], i.e. the 200 nm extent deemed the exclusive economic zone (EEZ), that overlapped with the offshore cable dataset "NOAA Charted Submarine cables in the United States as of December 2012" available through MarineCadastre.gov ^[MarineCadastre.gov cable metadata: https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html]. The territory of the contiguous US was further divided into West, East and Gulf of Mexico territories based on the Gulf of Mexico description from the International Hydrographic Organization (IHO) Sea Areas [@vliz_iho_2017]. For more details, see Table 1 and Figure \@ref(fig:mapCableTerritories).
 
-TODO: add citations to bibliography:
-
-- [MarineRegions.org](http://marineregions.org/downloads.php) > Exclusive Economic Zones Boundaries (EEZ), version: World EEZ v9 (2016-10-21, 123 MB). Suggested citation:
-
-    - Flanders Marine Institute (2016). Maritime Boundaries Geodatabase, version 1. Available online at http://www.marineregions.org/. Consulted on 2017-04-25.
-
-- [MarineCadastre.gov cable metadata](https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html)
-
-See Table \@ref(tab:tblTerritories) and Figure \@ref(fig:mapCableTerritories).
-
-(\#tab:tblTerritories)
-```{r tblTerritories}
+```{r tbl01Territories}
 usa = read_sf(usa_rgn_s_geo)
 st_geometry(usa) = NULL # drop geometry column
 
@@ -508,16 +496,13 @@ if (!file.exists(fig_ext) | redo){
 knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
 ```
 
-
 ## Depth
 
-The bathymetric depth comes from the [GEBCO 30 arc-second grid](http://www.gebco.net/data_and_products/gridded_bathymetry_data/gebco_30_second_grid/). Here's there requested attribution:
-
-**GEBCO_2014 Grid, version 20150318, www.gebco.net**
+The bathymetric depth comes from the [GEBCO 30 arc-second grid](http://www.gebco.net/data_and_products/gridded_bathymetry_data/gebco_30_second_grid/)^[GEBCO_2014 Grid, version 20150318, www.gebco.net].
 
 ## Renewable Energy
 
-NREL.
+The tidal, wave and wind datasets are from the National Renewable Energy Lab.
 
 ## Avoidance Zones for Siting New Facilities
 
@@ -647,10 +632,9 @@ if (!file.exists(fig_ext) | redo){
 knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
 ```
 
-See Table \@ref(tab:tblCableBufferTerritories).
+See Table 2.
 
-(\#tab:tblCableBufferTerritories)
-```{r tblCableBufferTerritories}
+```{r tbl02CableBufferTerritories}
 caption  = 'Table 2: Overlap of Cable Buffers with US Territories.'
 
 ter_tbl = usa_eez
@@ -713,17 +697,9 @@ Generated by:
 
 - [extract_cable-energy.R](https://github.com/ecoquants/nrel-cables/blob/master/docs/extract_cable-energy)
 
-Google Earth files (*.kml):
-
-- [buf_2xdepth-incr100m.kml](https://github.com/ecoquants/nrel-cables/raw/master/data/buf_2xdepth-incr100m.kml)
-
-- [buf_3xdepth-incr100m.kml](https://github.com/ecoquants/nrel-cables/raw/master/data/buf_3xdepth-incr100m.kml)
-
-- [lns_d1x.kml](https://github.com/ecoquants/nrel-cables/raw/master/data/lns_d1x.kml)
-
 ## Overlap of Cable Buffer with Renewable Energy
 
-Extract average and area of overlap between zones and renewable energy potential areas, possibly at various depth bins.
+Extracted average and area of overlap between cable safety zones and renewable energy potential areas.  (See Table 3.)
 
 ```{r pltEnergy, fig.cap='Energy by area and power class per US territory with cable overlay (minimum - recommended %).'}
 read_cbls = function(csv, form){
@@ -789,13 +765,10 @@ p = ggplot(
 print(p)
 ```
 
-See Table \@ref(tab:tblEnergy).
-
-(\#tab:tblEnergy)
-```{r tblEnergy}
+```{r tbl03Energy}
 d = tbl_form_cbls
 energy_hdr = 'Amount'
-caption = 'Table 2: Area overlap with cables by form of energy broken into size classes across all territories.'
+caption = 'Table 3: Area overlap with cables by form of energy broken into size classes across all territories.'
 
 # update energy column for proportion in color_box
 e_lbls = c(
@@ -865,11 +838,7 @@ d %>%
 #     caption=caption)
 ```
 
-See Table \@ref(tab:tblEnergy).
-
 ### Tidal
-
-units: mean power (W/m^2)
 
 ```{r pltTide, fig.cap='Tidal power (W/m2) and area per US territory with cable overlay (minimum - recommended %).'}
 plot_cbls(
@@ -880,19 +849,14 @@ plot_cbls(
   legend_justification = c(1,1))
 ```
 
-See Table \@ref(tab:tblTide).
-
-(\#tab:tblTide)
-```{r tblTide}
+```{r tbl04Tide}
 fmt_tbl(
   csv        = tide_cbls_csv, 
   energy_hdr = 'Tidal power (W/m2)',
-  caption    = 'Table 3: Area overlap with cables for tidal power (W/m2) by territory.')
+  caption    = 'Table 4: Area overlap with cables for tidal power (W/m2) by territory.')
 ```
 
 ### Wave
-
-units: wave energy flux (kW/m)
 
 ```{r pltWave, fig.cap='Wave energy (kW/m) and area per US territory with cable overlay (minimum - recommended %).'}
 plot_cbls(
@@ -901,21 +865,16 @@ plot_cbls(
   xlab  = 'Wave energy (kW/m)')
 ```
 
-See Table \@ref(tab:tblWave).
-
-(\#tab:tblWave)
-```{r tblWave}
+```{r tbl05Wave}
 fmt_tbl(
   csv        = wave_cbls_csv, 
   energy_hdr = 'Wave Energy (kW/m)',
-  caption    = 'Table 4: Area overlap with cables for wave energy (kW/m) by territory.')
+  caption    = 'Table 5: Area overlap with cables for wave energy (kW/m) by territory.')
 ```
 
 ### Wind
 
-units: wind speed (m/s) at 90m hub height
-
-```{r pltWind, fig.cap='Wind speed (m/s) and area per US territory with cable overlay (minimum - recommended %).'}
+```{r pltWind, fig.cap='Wind speed (m/s) at 90m hub height and area per US territory with cable overlay (minimum - recommended %).'}
 plot_cbls(
   csv   = wind_cbls_csv, 
   #title = 'Wind Energy by Area and Power Class per US Territory',
@@ -926,13 +885,10 @@ plot_cbls(
   legend_position      = c(1,1))
 ```
 
-See Table \@ref(tab:tblWind).
-
-(\#tab:tblWind)
-```{r tblWind}
+```{r tbl06Wind}
 fmt_tbl(
   csv=wind_cbls_csv, energy_hdr='Wind Speed (m/s)',
-  caption='Table 5: Area overlap with cables for wind speed (m/s) at 90m hub height by territory.')
+  caption='Table 6: Area overlap with cables for wind speed (m/s) at 90m hub height by territory.')
 ```
 
 ## Detailed Maps by US Territory of Cable Buffer and Renewable Energy
@@ -1027,25 +983,5 @@ src = lapply(
 `r knit(text = unlist(src))`
 
 # Conclusions
-
-## Next Steps
-
-- stacked histogram by cbl2/(cbl3-cbl2)/other; hist(wind$Speed_90)
-
-- simplify as native geojson
-
-Musial et al (2016):
-
-- wind speed (m/s) -- Table A-3 (p. 48): <7, 7-8, 8-9, 9-10, 10-11, total
-
-- depth classes (m) -- Table B-1 (p. 49): <30, 30-60, 60-700, 700-1000, >1000, total
-
-- distance to shore (nm) -- Table B-2 (p. 50): <3, 3-12, 12-50, 50-200, total
-
-- by states
-
-## Communication with Stakeholders
-
-Products will be online and readily digestable by stakeholders.
 
 # References
