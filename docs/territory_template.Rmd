@@ -1,5 +1,5 @@
 ```{r, results='asis'}
-cat("\n\n### {{ter}}\n\n")
+cat("\n\n## {{ter}}\n\n")
 ```
 
 See Figure \@ref(fig:{{ter_str}}MapCable).
@@ -9,7 +9,7 @@ knitr::include_graphics('{{map_cable}}', auto_pdf=F, dpi=fig_dpi)
 ```
 
 ```{r {{ter_str}}HdrTide, results='asis', eval={{has_tide}}}
-cat("\n\n#### Tidal\n\nSee Figure \\@ref(fig:{{ter_str}}MapTide).\n\n")
+cat("\n\n### Tidal\n\nSee Figure \\@ref(fig:{{ter_str}}MapTide).\n\n")
 ```
 
 ```{r {{ter_str}}MapTide, fig.cap='Tidal energy for {{ter}}.', eval={{has_tide}}}
@@ -17,7 +17,7 @@ knitr::include_graphics('{{map_tide}}', auto_pdf=F, dpi=fig_dpi)
 ```
 
 ```{r {{ter_str}}HdrWave, results='asis', eval={{has_wave}}}
-cat("\n\n#### Wave\n\nSee Figure \\@ref(fig:{{ter_str}}MapWave).\n\n")
+cat("\n\n### Wave\n\nSee Figure \\@ref(fig:{{ter_str}}MapWave).\n\n")
 ```
 
 ```{r {{ter_str}}MapWave, fig.cap='Wave energy for {{ter}}.', eval={{has_wave}}}
@@ -26,7 +26,7 @@ knitr::include_graphics('{{map_wave}}', auto_pdf=F, dpi=fig_dpi)
 
 
 ```{r {{ter_str}}HdrWind, results='asis', eval={{has_wind}}}
-cat("\n\n#### Wind\n\nSee Figure \\@ref(fig:{{ter_str}}MapWind).\n\n")
+cat("\n\n### Wind\n\nSee Figure \\@ref(fig:{{ter_str}}MapWind).\n\n")
 ```
 
 ```{r {{ter_str}}MapWind, fig.cap='Wind energy for {{ter}}.', eval={{has_wind}}}
