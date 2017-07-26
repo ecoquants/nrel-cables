@@ -8,6 +8,9 @@ date: |
   | ^1^: EcoQuants, Santa Barbara, CA
   | ^2^: National Renewable Energy Lab, Golden, CO \newline
 output:
+  bookdown::word_document2:
+    toc: yes
+    toc_depth: 4
   bookdown::pdf_document2:
     keep_tex: yes
     number_sections: yes
@@ -18,9 +21,6 @@ output:
     toc: yes
     toc_depth: 4
     toc_float: yes
-  bookdown::word_document2:
-    toc: yes
-    toc_depth: 4
 lof: yes
 csl: energy-efficiency.csl
 bibliography: nrel-cables.bib
