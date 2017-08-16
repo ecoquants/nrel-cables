@@ -160,11 +160,9 @@ map_energy_sf = function(
   energy_sf,
   ter,
   legend_title){
-  # ter = 'Hawaii'; fig = sprintf('figs/mapWind_%s', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
+  # ter = 'Hawaii'; energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
   
   d = energy_sf %>% 
-    filter(territory==ter)
-  eez = usa_eez %>%
     filter(territory==ter)
   cables = lns_d1x %>%
     filter(territory==ter)
@@ -178,7 +176,8 @@ map_energy_sf = function(
   pal = colorFactor('YlGnBu', d$energy, reverse=T)
   
   m = leaflet(d) %>% 
-    addProviderTiles('Esri.OceanBasemap') %>%
+    addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
+    addProviderTiles('Stamen.TonerLite', group = 'B&W') %>%
     addPolygons(
       group=legend_title,
       color=NA, smoothFactor = 0.5,
@@ -196,7 +195,7 @@ map_energy_sf = function(
     fitBounds(bb[['xmin']],bb[['ymin']],bb[['xmax']],bb[['ymax']]) %>%
     addLegend(position='bottomright', pal=pal, values=~energy, title=legend_title) %>%
     addLayersControl(
-      baseGroups = c("B&W", "Ocean"),
+      baseGroups = c('Ocean','B&W'),
       overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
       options = layersControlOptions(collapsed=T))
    m
@@ -204,80 +203,61 @@ map_energy_sf = function(
 
 map_tide = function(
   ter,
-  legend_title,
-  redo,
-  fig){
-  # ter = 'Alaska'; fig = sprintf('figs/mapTide_%s', str_replace_all(ter,' ','-')); legend_title = 'Tidal\npower\n(W/m2)'; redo = T
+  legend_title){
+  # ter = 'West'; legend_title = 'Tidal\npower\n(W/m2)'
   
-  fig_ext = sprintf('%s.%s', fig, fig_type)
-  if (!file.exists(fig_ext) | redo){
-    
-    ter_str = str_replace_all(ter, ' ', '-')
-    tif = sprintf('../data/tide_ter-%s.tif', ter_str)
-    r = raster(tif)
+  ter_str = str_replace_all(ter, ' ', '-')
+  tif = sprintf('../data/tide_ter-%s.tif', ter_str)
+  r = raster(tif) ()
+  r_r = rotate(r) # [0,360] to [-180,180]
+  r_a = aggregate(r_r, fact=8, fun=max)
+  r_l = projectRasterForLeaflet(r_a)
+  r_l[r_l < 0] = 0
+  
+  cables = lns_d1x %>%
+    filter(territory==ter) #%>%
+  #   #mutate(geometry = (geometry + c(180,0)) %% c(180) + c(0,0)) %>% # 50 62
+  #   mutate(geometry = (geometry + c(360,0)) %% c(360) + c(0,0)) %>%
+  #    st_bbox()
+  
+  # cables %>%
+  #   as("Spatial") %>%
+  #   spTransform("+proj=longlat +datum=WGS84") %>%
+  #   bbox()
+  cables2 = dx2 %>%
+    filter(territory==ter)
+  cables3 = dx3 %>%
+    filter(territory==ter)
+  
+  bb = bbox(r_r)
+  bb = c(xmin=bb[1,1], xmax=bb[1,2], ymin=bb[2,1], ymax=bb[2,2])
+  
+  brks = c(0,500,1000,1500,11000)
+  pal = colorBin(
+    'YlGnBu', values(r_l), bins=brks, 
+    pretty=T, na.color='transparent', reverse=T)
 
-    #d = energy_sf %>% 
-    #  filter(territory==ter)
-    eez = usa_eez %>%
-      filter(territory==ter)
-    cables = lns_d1x %>%
-      filter(territory==ter)
-    cables2 = dx2 %>%
-      filter(territory==ter)
-    cables3 = dx3 %>%
-      filter(territory==ter)
-    
-    bb = bbox(r)
-    bb = c(xmin=bb[1,1], xmax=bb[1,2], ymin=bb[2,1], ymax=bb[2,2])
-    # TODO: st_cast(x=st_bbox, to=st_polygon)                 
-    bb_ply = st_sf(
-      tibble(
-        territory = ter,
-        geom = st_sfc(st_polygon(list(rbind(
-          c(bb['xmin'], bb['ymin']),
-          c(bb['xmax'], bb['ymin']),
-          c(bb['xmax'], bb['ymax']),
-          c(bb['xmin'], bb['ymax']),
-          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
-    earth = land %>%
-      filter(
-        st_intersects(land, bb_ply, sparse=F)[,1])
-
-    # https://nrelscience.org/2013/05/30/this-is-how-i-did-it-mapping-in-r-with-ggplot2/
-    d = as.data.frame(r, xy=T) %>% as_tibble()
-    colnames(d) <- c('lon','lat','value')
-    d = d %>% filter(!is.na(value))
-    
-    p = ggplot() + 
-      geom_raster(data=d, aes(x=lon, y=lat, fill=value)) + 
-      scale_fill_gradientn(
-        legend_title,
-        colours=rev(brewer.pal(11,'YlGnBu')),
-        limits=c(0,cellStats(r, 'max')),
-        na.value = 'transparent') +
-      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
-      geom_sf(data=eez, fill=NA, color='gray40') +
-      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
-      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
-      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
-      coord_sf(
-        xlim=bb[c('xmin','xmax')], 
-        ylim=bb[c('ymin','ymax')]) +
-      theme(
-        legend.background = element_rect(fill='grey90'),
-        axis.title.x=element_blank(),
-        axis.title.y=element_blank(),  
-        legend.key = element_blank())
-      
-    if (fig_type=='pdf'){
-      pdf(fig_ext, width=6.5, height=5)
-    }  else {
-      png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
-    }
-    print(p)
-    dev.off()
-    
-  }
+  leaflet() %>% 
+    addProviderTiles('Esri.OceanBasemap') %>%
+    addRasterImage(r_l, colors=pal, opacity=0.8, project=F) %>%
+    addLegend(pal=pal, values=values(r_l), title='Tidal Energy (W/m^2)') %>% 
+    # addPolygons(
+    #   data = cables2, group='Min. Cable (2x)',
+    #   color='red', stroke=F, fillOpacity = 0.3) %>%
+    # addPolygons(
+    #   data = cables3, group='Rec. Cable (3x)',
+    #   color='red', stroke=F, fillOpacity = 0.3) %>%      
+    addPolylines(
+      data = cables, group='Cables',
+      color='red', opacity = 0.8, weight=1) %>% #,
+    fitBounds(bb[['xmin']],bb[['ymin']],bb[['xmax']],bb[['ymax']]) %>%
+    addLegend(position='bottomright', pal=pal, values=~energy, title=legend_title) %>%
+    addLayersControl(
+      baseGroups = c("B&W", "Ocean"),
+      overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
+      options = layersControlOptions(collapsed=T))
+   m
+   
   #system(sprintf('open %s', fig))
   #knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
 }
@@ -415,3 +395,14 @@ map_energy_sf(wave_sf, 'US Virgin Islands', 'Wave\nenergy\n(kW/m)')
 map_energy_sf(wave_sf, 'West', 'Wave\nenergy\n(kW/m)')
 ```
 
+
+```{r mapTide leaflet, eval=F}
+## Tidal
+#tide = raster(tide_tif)
+#plot(tide_tif)
+# TODO: in report.Rmd, leaflet viz tide rasters per territory w/ regex in data/tide_ter-*.tif
+
+territories = read_csv(tide_cbls_csv) %>% 
+  filter(territory !='ALL') %>% 
+  .$territory %>% unique()
+```
