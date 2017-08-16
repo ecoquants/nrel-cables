@@ -24,11 +24,19 @@ cat("\n\n### Wave\n\nSee Figure \\@ref(fig:{{ter_str}}MapWave).\n\n")
 knitr::include_graphics('{{map_wave}}', auto_pdf=F, dpi=fig_dpi)
 ```
 
-
 ```{r {{ter_str}}HdrWind, results='asis', eval={{has_wind}}}
 cat("\n\n### Wind\n\nSee Figure \\@ref(fig:{{ter_str}}MapWind).\n\n")
 ```
 
 ```{r {{ter_str}}MapWind, fig.cap='Wind energy for {{ter}}.', eval={{has_wind}}}
 knitr::include_graphics('{{map_wind}}', auto_pdf=F, dpi=fig_dpi)
+```
+
+```{r {{ter_str}}MapWindLeaflet, fig.cap='Wind energy for {{ter}} - interactive map.', eval=F}
+map_energy_sf(
+  energy_sf = wind_sf,
+  ter = '{{ter}}',
+  legend_title = 'Wind\nspeed\n(m/s)',
+  redo=T,
+  fig = 'htmlwidget')
 ```

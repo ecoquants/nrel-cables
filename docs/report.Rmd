@@ -8,19 +8,19 @@ date: |
   | ^1^: EcoQuants, Santa Barbara, CA
   | ^2^: National Renewable Energy Lab, Golden, CO \newline
 output:
-  bookdown::word_document2:
-    toc: yes
-    toc_depth: 4
-  bookdown::pdf_document2:
-    keep_tex: yes
-    number_sections: yes
-    toc: yes
-    toc_depth: 4
   bookdown::html_document2:
     number_sections: yes
     toc: yes
     toc_depth: 4
     toc_float: yes
+  bookdown::pdf_document2:
+    keep_tex: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  bookdown::word_document2:
+    toc: yes
+    toc_depth: 4
 lof: yes
 csl: energy-efficiency.csl
 bibliography: nrel-cables.bib
@@ -234,8 +234,10 @@ map_energy_sf = function(
   fig){
   # ter = 'Hawaii'; fig = sprintf('figs/mapWind_%s', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
   
+  # TODO: fig_type # fig='htmlwidget'
   fig_ext = sprintf('%s.%s', fig, fig_type)
-  if (!file.exists(fig_ext) | redo){
+  #browser()
+  if (!file.exists(fig_ext) | redo | fig=='htmlwidget'){
     
     d = energy_sf %>% 
       filter(territory==ter)
@@ -263,29 +265,66 @@ map_energy_sf = function(
       filter(
         st_intersects(land, bb_ply, sparse=F)[,1]) # plot(earth)
 
-    p = ggplot(data=d) +
-      geom_sf(aes(fill=energy), color=NA) +
-      scale_fill_brewer(legend_title, palette='YlGnBu', direction=-1) +
-      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
-      geom_sf(data=eez, fill=NA, color='gray40') +
-      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
-      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
-      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
-      coord_sf(
-        xlim=bb[c('xmin','xmax')], 
-        ylim=bb[c('ymin','ymax')]) +
-      theme(
-        legend.background = element_rect(fill='grey90'),  
-        legend.key = element_blank())
+    # TODO: leaflet
+    if (fig == 'htmlwidget'){
+      pal = colorFactor('YlGnBu', d$energy, reverse=T)
+  
+      m = leaflet(d) %>% 
+        addProviderTiles('Esri.OceanBasemap') %>%
+        addPolygons(
+          group=legend_title,
+          color=NA, smoothFactor = 0.5,
+          fillOpacity = 0.5,
+          fillColor = ~pal(energy)) %>% #,
+          # label = ~sprintf(
+          #   "<strong>%s</strong>: %s",
+          #   territory, energy) %>% lapply(HTML),
+          # highlightOptions = highlightOptions(
+          #   color = "white", weight = 2, bringToFront = T)) %>%
+        addPolygons(
+          data = cables2, group='Min. Cable (2x)',
+          color='red', stroke=F, fillOpacity = 0.3) %>%
+        addPolygons(
+          data = cables3, group='Rec. Cable (3x)',
+          color='red', stroke=F, fillOpacity = 0.3) %>%      
+        addPolylines(
+          data = cables, group='Cables',
+          color='red', opacity = 0.8, weight=1) %>% #,
+          # popup = ~sprintf(
+          #   "scaleBand: %s<br>description: %s<br>effectiveDate: %s<br>Territory: %s<br>Buffer (1x): %d",
+          #   scaleBand, description, effectiveDate, territory, buf1x)) %>%
+        addLegend(pal=pal, values=~energy, title=legend_title) %>%
+        addLayersControl(
+          baseGroups = c("B&W", "Ocean"),
+          overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
+          options = layersControlOptions(collapsed=T))
+    } else {
       
-    if (fig_type=='pdf'){
-      pdf(fig_ext, width=6.5, height=5)
-    }  else {
-      png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
+      p = ggplot(data=d) +
+        geom_sf(aes(fill=energy), color=NA) +
+        scale_fill_brewer(legend_title, palette='YlGnBu', direction=-1) +
+        geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
+        geom_sf(data=eez, fill=NA, color='gray40') +
+        geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
+        geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
+        geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
+        coord_sf(
+          xlim=bb[c('xmin','xmax')], 
+          ylim=bb[c('ymin','ymax')]) +
+        theme(
+          legend.background = element_rect(fill='grey90'),  
+          legend.key = element_blank())
+        
+      if (fig_type=='pdf'){
+        pdf(fig_ext, width=6.5, height=5)
+      }  else {
+        png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
+      }
+      print(p)
+      dev.off()
     }
-    print(p)
-    dev.off()
   }
+  if (fig == 'htmlwidget') m
   #system(sprintf('open %s', fig))
   #knitr::include_graphics(fig, dpi=fig_dpi)
 }
@@ -400,6 +439,8 @@ usa_dx = read_csv(usa_dx_csv)
 ```
 
 # Executive Summary {-}
+
+Marine energy (offshore wind, tidal, wave) promises to diversify the U.S. renewable energy porfolio, which is important to reducing greenhouse gas emissions that contribute to climate change and reducing reliance on foreign non-renewable energy sources for national security. Development of these marine energy resources in the U.S. lags considerably behind Europe and other developed countries. The first (and currently only) U.S. commercial facility in Block Island, Rhode Island went into production December of 2016. As implementation costs for these technologies continue to drop and increasingly ambitious targets for renewable energy are set, planning of new marine renewable energy development needs to effectively ev competing ocean uses that may conflict.
 
 Operation and maintenance of submarine cables may conflict with marine renewable energy development. Although submarine cable locations are publicly accessible, safe setback distances are not readily available for planning new marine renewable energy development.
 
@@ -913,7 +954,7 @@ for (ter in unique(wind_sf$territory)){ # ter = 'Hawaii'
 #knitr::include_graphics(sprintf('figs/mapWind_%s.pdf', str_replace_all(unique(wind_sf$territory),' ','-')), dpi=fig_dpi)
 ```
 
-```{r srcTerritoryTemplate, include=F}
+```{r srcTerritoryTemplate, include=F, cache=F}
 src = lapply(
   sort(unique(lns_d1x$territory)), 
   function(
