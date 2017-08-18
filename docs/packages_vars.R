@@ -1,7 +1,7 @@
 # load packages, installing if needed ----
 packages = c(
   # general data science
-  'tidyverse','stringr',
+  'tidyverse','stringr','units',
   # dynamic document creation
   'knitr','rmarkdown','bookdown','DT','htmltools','formattable',
   # plotting & mapping
@@ -37,14 +37,16 @@ crs_gcs_w = '+proj=longlat +datum=WGS84 +lon_wrap=180'
 # create_cable-buffer.R paths ----
 gdb           = '../data/SubmarineCables/NOAAChartedSubmarineCables.gdb'
 depth_nc      = '~/github/obis-lat-time-fig/data/GEBCO_2014_2D.nc'        # 1.87 GB -- too big for Github
-depth_m_grd   = '../data/depth_m.grd'
+depth_grd     = '/Volumes/Best HD/nrel_data_big/data/depth.grd' # wrapped and cropped
+depth_m_grd   = '/Volumes/Best HD/nrel_data_big/data/depth_m.grd'
+depth_m_cbl3_grd = '/Volumes/Best HD/nrel_data_big/data/depth_m_cbl3.grd'
 lns_geo       = '../data/lns.geojson'
 lns_usa_geo   = '../data/lns_usa.geojson'
 eez_shp       = '~/mbon_data_big/technical/boundaries/eez/eez.shp'
 usa_geo       = '../data/eez_usa.geojson'
 usa_rgn_geo   = '../data/usa_rgn.geojson'
 usa_rgn_s_geo = '../data/usa_rgn_simplify05.geojson'
-usa_rgn_kml   = '../data/usa_rgn.kmz'
+#usa_rgn_kml   = '../data/usa_rgn.kmz'
 lns_d1x_geo   = '../data/lns_d1x.geojson'
 lns_d1x_rgn_geo = '../data/lns_d1x_rgn.geojson'
 lns_rgn_geo   = '../data/lns_rgn.geojson'
@@ -55,6 +57,8 @@ dx2_kml       = '../data/buf_2xdepth_incr100m.kml'
 dx3_kml       = '../data/buf_3xdepth_incr100m.kml'
 lns_d1x_kml   = '../data/lns_d1x.kml'
 land_usaeez_geo = '../data/land_wrld2_usaeez.geojson'
+dx2_depth_geo = sprintf('../data/buf_2xdepth_incr%sm_depth-binned.geojson', d_incr)
+dx3_depth_geo = sprintf('../data/buf_3xdepth_incr%sm_depth-binned.geojson', d_incr)
 
 # extract_cable-energy.R paths ----
 # wind
@@ -68,12 +72,15 @@ wind_geo      = '../data/wind.geojson'
 wind_cbl2_geo = '../data/wind_cable2.geojson'
 wind_cbl3_geo = '../data/wind_cable3.geojson'
 wind_cbls_csv = '../data/wind_cables.csv'
+wind_cbls_depth_csv = '../data/wind_cables_depth.csv'
 # wave
 wave_shp      = '/Volumes/Best HD/nrel_data_big/nrel.gov/wave/mhk-atlas_wave_wef_ann/wave_wef_ann.shp'
 wave_geo      = '../data/wave.geojson'
 wave_cbl2_geo = '../data/wave_cable2.geojson'
 wave_cbl3_geo = '../data/wave_cable3.geojson'
-wave_cbls_csv = '../data/wave_cables.csv'
+wave_cbl2_depth_geo = '../data/wave_cable2_depth.geojson'
+wave_cbl3_depth_geo = '../data/wave_cable3_depth.geojson'
+wave_cbls_depth_csv = '../data/wave_cables_depth.csv'
 # tide
 tide_shps    = list(
   West = '/Volumes/Best HD/nrel_data_big/nrel.gov/tide/tide_data_west/tide_data_west.shp',
@@ -81,3 +88,4 @@ tide_shps    = list(
 tide_res_dd   = 0.005 # tide raster resolution in decimal degrees
 tide_csv      = '../data/tide.csv'
 tide_cbls_csv = '../data/tide_cables.csv'
+tide_cbls_depth_csv = '../data/tide_cables_depth.csv'

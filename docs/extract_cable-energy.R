@@ -131,6 +131,8 @@ if (!file.exists(tide_cbls_csv) | redo){
         s = stack(r, area(r))
         names(s) = c('pwr_wm2', 'area_km2')
         
+        # TODO: stack with depth zone
+        
         # get values for whole raster
         if (!file.exists(csv_r) | redo){
           cat(sprintf('    getValues -- %s\n', Sys.time()))
@@ -470,3 +472,401 @@ if (!file.exists(wind_cbls_csv)){
   
   wind_cbls %>% write_csv(wind_cbls_csv)
 }
+
+# depth re-analysis, starting with study area depth rotate & crop ----
+if (!file.exists(depth_grd)){
+  
+  # read in raster and rotate to [0,360]
+  depth = raster(depth_nc, layer = 'elevation')
+  depth_w = shift(rotate(shift(depth, 180)), 180) # wrap rotate from [-180,180] to [0,360]
+  #plot(depth_w)
+   
+  # helper for tide bbox in [0, 180]
+  # # tide_west
+  # b = c(xmin=-179.65306, ymin=32.39362, xmax=-117.09722, ymax=61.48098)
+  # # tide_east
+  # b = c(xmin=-97.71923, ymin=17.55710, xmax=-64.43206, ymax=45.17222)
+  # bb = st_polygon(list(matrix(c(
+  #   b['xmin'], b['ymin'],
+  #   b['xmin'], b['ymax'],
+  #   b['xmax'], b['ymax'],
+  #   b['xmax'], b['ymin'],
+  #   b['xmin'], b['ymin']), ncol=2, byrow=T)))
+  # bb_sf = st_cast(st_sf(a = 1, geometry=st_sfc(bb))) %>%
+  #   st_set_crs(crs_gcs)
+  # st_bbox(bb_sf)
+  # mapview(bb_sf)
+  # bb_sf = bb_sf  %>%
+  #   mutate(geometry = (geometry + c(360,90)) %% c(360) - c(0,90)) %>% 
+  #   st_set_crs(crs_gcs_w)
+  # st_bbox(bb_sf)
+  # mapview(bb_sf)
+  
+  # get extents of all input data of interest to get outer bbox
+  #                                            # xmin ymin xmax ymax 
+  # st_bbox(wave)                              #  171   16  297   64 
+  # st_bbox(wind)                              #  199   18  294   50
+  # read_sf(tide_shps[['West']]) %>% st_bbox() #  180   32  243   62
+  # read_sf(tide_shps[['East']]) %>% st_bbox() #  262   17  296   46
+  # bbox(cbl3_buf1px)                          #  141    4  296   62
+  #                               # outer bbox #  141    4  297   64 
+  
+  depth_wc = crop(depth_w, extent(141, 297, 4, 64))
+  #plot(depth_wc)
+
+  writeRaster(depth_wc, depth_grd, overwrite=T)
+} else {
+  depth_wc = raster(depth_grd)
+}
+
+tbl_depth_reclass = tribble(
+  ~depth_from, ~depth_to, ~depth_mid,
+  -10000,         0,     -5000,
+       0,       100,        50,
+     100,       200,       150,
+     200,      1000,       600,
+    1000,     10000,      5000)
+
+# depth per region for extraction of energy resource ---- 
+if (F){
+  for (i in seq_along(unique(usa_rgn_s$territory))){ # i=1
+    ter = sort(unique(usa_rgn_s$territory))[i]
+    cat(sprintf('%02d: %s -- %s\n', i, ter, Sys.time()))
+  
+    ter_extent = usa_rgn_s %>%
+      filter(territory == ter) %>%
+      as('Spatial') %>%
+      extent()
+    
+    depth_ter = crop(depth_wc, ter_extent)
+    depth_ter = depth_ter * -1
+    depth_ter = reclassify(depth_ter, as.matrix(tbl_depth_reclass)) 
+    
+    plot(depth_ter)
+    
+    depth_ter_grd = sprintf('../data/depth_%s.grd', str_replace(ter, ' ', '_'))
+    writeRaster(depth_ter, depth_ter_grd, overwrite=T)
+  }
+}
+  
+if (!file.exists(depth_m_cbl3_grd)){
+  # resume...
+  depth_wc = raster(depth_grd)
+  
+  # buffer out 1 pixel in decimal degrees
+  cbl3_buf = st_buffer(cbl3_sf, dist=0.01) %>% as('Spatial')
+  #plot(cbl3_buf1px)
+  
+  # rasterize buffer poly to mask depth
+  system.time({
+    cbl3_r = rasterize(cbl3_buf, depth_wc, 1)
+  }) # 1.8 min
+  #plot(cbl3_r)
+  
+  # mask out cells besides on/near cable lines
+  system.time({
+    #depth_wcc = crop(depth_wc, cbl3_r)
+    depth_m_cbl3 = mask(depth_wc, cbl3_r)
+  }) # 0.8 min
+  
+  # convert to bathymetric depth
+  system.time({
+    depth_m_cbl3[depth_m_cbl3 > 10] = NA
+    depth_m_cbl3 = depth_m_cbl3 %>% trim()
+    depth_m_cbl3 = depth_m_cbl3 * -1
+  }) # 1 min
+  # plot(depth_m_cbl3)
+  #mapview(depth_m_cbl3)
+  # leaflet() %>%
+  #   
+  #   addRasterImage(depth_m_cbl3)
+  
+  system.time({
+    writeRaster(depth_m_cbl3, depth_m_cbl3_grd, overwrite=T)  # 100.5/60 min
+  })
+} else {
+  depth_m_cbl3 = raster(depth_m_cbl3_grd) # plot(depth_m_cbl3)
+}
+
+# intersect cable buffers with reclassified depth raster ----- 
+if (!file.exists(dx2_depth_geo) | !file.exists(dx2_depth_geo)){
+  
+  # create depth reclass table
+  d_max = cellStats(depth_m_cbl3, 'max') # 7511
+  
+  # reclassify raster
+  system.time({
+    r_d3bin = reclassify(depth_m_cbl3, as.matrix(tbl_depth_reclass)) 
+  }) # 17 sec
+  #plot(r_d3bin)
+  # leaflet() %>%
+  #   addTiles() %>%
+  #   addRasterImage(r_d3bin)
+  #freq(r_d3bin)
+  
+  writeRaster(r_d3bin, '../data/r_d3bin.grd', overwrite=T)  # 206.1/60 min
+
+  # convert raster to vector
+  # iterate over regions so finishes and memory doesn't page to filesys vs:
+  #   p_d3bin = rasterToPolygons(r_d3bin, dissolve=T)
+  p_d3bin_ters = list()
+  for (ter in sort(usa_rgn_s$territory)){ # ter = 'Guam'
+    cat(sprintf('ter: %s\n', ter))
+
+    ter_extent = usa_rgn_s %>%
+      filter(territory == ter) %>%
+      as('Spatial') %>%
+      extent()
+    
+    r_d3bin_ter = crop(r_d3bin, ter_extent)
+    
+    p_d3bin_ters[[ter]] = rasterToPolygons(r_d3bin_ter, dissolve=T) %>% 
+      ms_simplify(keep=0.3) %>%
+      st_as_sf() %>%
+      select(
+        depth_bin=layer) %>%
+      mutate(
+        territory=ter)
+  }
+  p_d3bin = do.call('rbind', p_d3bin_ters)
+  p_d3bin = p_d3bin %>%
+    mutate(
+      depth_bin = ifelse(depth_bin < 0, -5, depth_bin),
+      depth_factor = factor(
+        x      = depth_bin, 
+        levels = c(-5,50,150,600,5000), 
+        labels = c('<0', '0-100','100-200','200-1,000','>1,000'),
+        ordered=T))
+  
+  # fix if bad intersections
+  if (any(!st_is_valid(p_d3bin))) {
+    p_d3bin = p_d3bin %>%
+      mutate(geometry = st_buffer(geometry, dist=0))
+  }
+  
+  p_d3bin = p_d3bin %>%
+    group_by(territory, depth_factor) %>%
+    summarize() %>%
+    ungroup()
+  #table(p_d3bin$depth_factor)
+  
+  # pal = colorFactor('YlOrRd', p_d3bin$depth_factor, reverse=T)
+  # leaflet(p_d3bin) %>%
+  #   addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
+  #   addProviderTiles('Stamen.TonerLite', group = 'B&W') %>%
+  #   #addRasterImage(r_d3bin_ter) %>%
+  #   addPolygons(
+  #     group='p_d3bin',
+  #     color=NA, fillColor = ~pal(depth_factor), fillOpacity = 0.5) %>%
+  #   addPolygons(
+  #     data=cbl3_sf, group='cbl3_sf',
+  #     color=NA, fillColor ='black', fillOpacity = 0.5) %>%
+  #   addLegend(
+  #     position='bottomright', pal=pal, values=~depth_factor, title='depth_bin') %>%
+  #   addLayersControl(
+  #     baseGroups = c('Ocean','B&W'),
+  #     overlayGroups = c('p_d3bin', 'cbl3_sf'),
+  #     options = layersControlOptions(collapsed=F))
+
+  write_sf(p_d3bin, '../data/p_d3bin.geojson', delete_dsn=T)
+  
+  # intersect buffers to depth vector
+  system.time({
+    cbl2_depth_sp = raster::intersect(
+      cbl2_sp, 
+      p_d3bin %>% 
+        select(-territory) %>% 
+        as('Spatial')) # 274.8/60 min
+    cbl3_depth_sp = raster::intersect(
+      cbl3_sp, 
+      p_d3bin %>% 
+        select(-territory) %>% 
+        as('Spatial')) # 274.8/60 min
+  }) # 10 sec
+  
+  # convert to simple feature
+  cbl2_depth_sf = cbl2_depth_sp %>% st_as_sf()
+  cbl3_depth_sf = cbl3_depth_sp %>% st_as_sf()
+  
+  # fix if bad intersections
+  if (any(!st_is_valid(cbl2_depth_sf))) {
+    cbl2_depth_sf = cbl2_depth_sf %>%
+      mutate(geometry = st_buffer(geometry, dist=0))
+  }
+  if (any(!st_is_valid(cbl3_depth_sf))) {
+    cbl3_depth_sf = cbl3_depth_sf %>%
+      mutate(geometry = st_buffer(geometry, dist=0))
+  }
+  
+  # calculate area
+  cbl2_depth_sf = cbl2_depth_sf %>%
+    mutate(
+      area_km2 = st_area(geometry) %>% set_units(km^2))
+  cbl3_depth_sf = cbl3_depth_sf %>%
+    mutate(
+      area_km2 = st_area(geometry) %>% set_units(km^2))
+  
+  pal = colorFactor('YlOrRd', cbl3_depth_sf$depth_factor, reverse=T)
+  leaflet(cbl3_depth_sf) %>%
+    addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
+    addProviderTiles('Stamen.TonerLite', group = 'B&W') %>%
+    #addRasterImage(r_d3bin_ter) %>%
+    addPolygons(
+      group='cbl3_depth_sf',
+      color=NA, fillColor = ~pal(depth_factor), fillOpacity = 0.5) %>%
+    addPolygons(
+      data=cbl3_sf, group='cbl3_sf',
+      color=NA, fillColor ='black', fillOpacity = 0.5) %>%
+    addLegend(
+      position='bottomright', pal=pal, values=~depth_factor, title='depth_bin') %>%
+    addLayersControl(
+      baseGroups = c('Ocean','B&W'),
+      overlayGroups = c('cbl3_depth_sf', 'cbl3_sf'),
+      options = layersControlOptions(collapsed=F))
+  
+  # write to geojson
+  cbl2_depth_sf %>% write_sf(dx2_depth_geo, delete_dsn=T)
+  cbl3_depth_sf %>% write_sf(dx3_depth_geo, delete_dsn=T)
+} else {
+  cbl2_depth_sf = read_sf(dx2_depth_geo)
+  cbl3_depth_sf = read_sf(dx3_depth_geo)
+}
+
+# wave: intersect with depth-binned cables & dissolve on region & energy -----
+if (any(!file.exists(wave_cbl2_depth_geo), !file.exists(wave_cbl3_depth_geo), redo)){
+  
+  # fix if bad intersections
+  if (any(!st_is_valid(wave))) {
+    wave = wave %>%
+      mutate(geometry = st_buffer(geometry, dist=0))
+  }
+
+  wave = wave %>% 
+    mutate(
+      energy_factor = factor(
+        x       = energy_lbl,
+        labels  = c('0-10','10-20','20-30','>30'),
+        ordered = T)) %>%
+    select(-energy_num, -energy_lbl)
+  
+  wave_depth_cbl2 = st_intersection(
+    wave %>% 
+      select(-area_km2), 
+    cbl2_depth_sf %>% 
+      select(-territory, -area_km2)) %>%
+    group_by(territory, depth_factor, energy_factor) %>%
+    summarise() %>% 
+    ungroup() %>%
+    mutate(
+      area_km2 = st_area(geometry) %>% set_units(km^2)) %>%
+    arrange(territory, depth_factor, energy_factor)
+  
+  wave_depth_cbl3 = st_intersection(
+    wave %>% 
+      select(-area_km2), 
+    cbl3_depth_sf %>% 
+      select(-territory, -area_km2)) %>%
+    group_by(territory, depth_factor, energy_factor) %>%
+    summarise() %>% 
+    ungroup() %>%
+    mutate(
+      area_km2 = st_area(geometry) %>% set_units(km^2)) %>%
+    arrange(territory, depth_factor, energy_factor)
+  
+  # fix if bad intersections
+  if (any(!st_is_valid(wave_depth_cbl2))) {
+    wave_depth_cbl2 = wave_depth_cbl2 %>%
+      mutate(geometry = st_buffer(geometry, dist=0))
+  }
+  if (any(!st_is_valid(wave_depth_cbl3))) {
+    wave_depth_cbl3 = wave_depth_cbl3 %>%
+      mutate(geometry = st_buffer(geometry, dist=0))
+  }
+  
+  # write to geojson
+  wave_depth_cbl2 %>% write_sf(wave_cbl2_depth_geo, delete_dsn=T)
+  wave_depth_cbl3 %>% write_sf(wave_cbl3_depth_geo, delete_dsn=T)
+}
+wave_depth_cbl2 = read_sf(wave_cbl2_depth_geo)
+wave_depth_cbl3 = read_sf(wave_cbl3_depth_geo)
+
+# wave: summarize by region, depth & energy with cables into table -----
+wave
+
+depth_wc
+
+if (!file.exists(wave_cbls_csv)){
+  
+  wave_cbls = wave %>% 
+    as_tibble() %>% 
+    select(-geometry) %>%
+    left_join(
+      wave_depth_cbl2 %>% 
+        as_tibble() %>% 
+        select(-geometry, cable2_km2=area_km2),
+      by=c('territory','energy_lbl','energy_num')) %>%
+    left_join(
+      wave_depth_cbl3 %>% 
+        as_tibble() %>% 
+        select(-geometry, cable3_km2=area_km2),
+      by=c('territory','energy_lbl','energy_num')) %>%
+    replace_na(list(
+      cable2_km2 = 0,
+      cable3_km2 = 0)) %>%
+    mutate(
+      cable2_pct     = cable2_km2 / area_km2,
+      cable3_pct     = cable3_km2 / area_km2) %>%
+    select(
+      territory,
+      energy_num, energy_lbl, area_km2,
+      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
+    arrange(territory, energy_num) # View(wave_cbls)
+  
+  # quick fix: remove *pct_all columns
+  # read_csv(wave_cbls_csv) %>%
+  #   select(-pct_all, -cable2_pct_all, -cable3_pct_all) %>%
+  #   write_csv(wave_cbls_csv)
+  
+  # rbind territory=ALL
+  wave_cbls = wave_cbls %>%
+    bind_rows(
+      wave_cbls %>%
+        group_by(energy_num, energy_lbl) %>%
+        summarize(
+          area_km2   = sum(area_km2),
+          cable2_km2 = sum(cable2_km2),
+          cable3_km2 = sum(cable3_km2),
+          territory = 'ALL') %>%
+        mutate(
+          cable2_pct     = cable2_km2 / area_km2,
+          cable3_pct     = cable3_km2 / area_km2) %>%
+        ungroup()) 
+  
+  wave_cbls %>% write_csv(wave_cbls_csv)
+}
+
+
+# wind: intersect with depth-binned cables & dissolve on region & energy -----
+if (any(!file.exists(wind_cbl2_depth_geo), !file.exists(wind_cbl3_depth_geo), redo)){
+  
+  wind_depth_cbl2 = st_intersection(wind, cbl2_depth_sf %>% select(-territory)) %>%
+    group_by(territory, depth_bin, energy_lbl, energy_num) %>%
+    summarise() %>% ungroup() %>%
+    mutate(
+      area_km2 = st_area(geometry) / (1000*1000)) %>%
+    arrange(territory, depth_bin, energy_num)
+  
+  wind_depth_cbl3 = st_intersection(wind, cbl3_depth_sf %>% select(-territory)) %>%
+    group_by(territory, depth_bin, energy_lbl, energy_num) %>%
+    summarise() %>% ungroup() %>%
+    mutate(
+      area_km2 = st_area(geometry) / (1000*1000)) %>%
+    arrange(territory, depth_bin, energy_num)
+  
+  # write to geojson
+  wind_depth_cbl2 %>% write_sf(wind_cbl2_depth_geo, delete_dsn=T)
+  wind_depth_cbl3 %>% write_sf(wind_cbl3_depth_geo, delete_dsn=T)
+}
+wind_depth_cbl2 = read_sf(wind_cbl2_depth_geo)
+wind_depth_cbl3 = read_sf(wind_cbl3_depth_geo)
+

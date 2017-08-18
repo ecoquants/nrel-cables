@@ -573,3 +573,50 @@ read_sf(lns_d1x_geo) %>% select(buf1x, part, GeoName) %>% write_sf(lns_d1x_kml, 
 #   editMap()
 # 
 # lns_d1x
+
+# fix Gulf of Mexico (gom / GoMex / gomex) in usa_rgn ----
+usa_rgn = read_sf(usa_rgn_geo)
+usa_s_rgn = read_sf(usa_rgn_s_geo)
+
+eez = read_sf(eez_shp)  %>%
+eez = eez %>%
+  mutate(geometry = (geometry + c(360,90)) %% c(360) - c(0,90)) %>% 
+  st_set_crs(crs_gcs_w)
+  
+eez_us = eez %>%
+  filter(GeoName == "United States Exclusive Economic Zone")
+usa_rgn_gom = usa_rgn %>%
+  filter(territory == "Gulf of Mexico")
+
+# leaflet() %>%
+#   addTiles() %>%
+#   addPolygons(data=usa_rgn_gom, fillColor = 'red') %>%
+#   addPolygons(data=eez_us, fillColor = 'green')
+
+usa_rgn_gom2 = usa_rgn_gom %>%
+  st_intersection(eez_us)
+
+# leaflet() %>%
+#   addTiles() %>%
+#   addPolygons(data=usa_rgn_gom2, fillColor = 'red')
+
+usa_rgn2 = usa_rgn %>%
+  filter(territory != "Gulf of Mexico") %>%
+  rbind(
+    usa_rgn_gom2 %>%
+      select(territory, area_km2))
+
+# leaflet() %>%
+#   addTiles() %>%
+#   addPolygons(data=usa_rgn2, fillColor = 'red')
+
+usa_rgn2_s = ms_simplify(usa_rgn2 %>% as('Spatial')) %>% st_as_sf()
+
+# leaflet() %>%
+#   addTiles() %>%
+#   addPolygons(data=usa_rgn2_s, fillColor = 'red')
+
+file.remove(usa_rgn_geo)
+file.remove(usa_rgn_s_geo)
+write_sf(usa_rgn2, usa_rgn_geo)
+write_sf(usa_rgn2_s, usa_rgn_s_geo)
