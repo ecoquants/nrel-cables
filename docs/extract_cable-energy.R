@@ -114,8 +114,8 @@ if (!file.exists(tide_cbls_csv) | redo){ # TODO / DEBUG: remove | T
       # rasterize by territory
       pts = pts %>%
         filter(!is.na(territory))
-      #for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1] # ter = 'Alaska'
-      for (ter in c("Gulf of Mexico","Puerto Rico","US Virgin Islands")){ # TODO/DEBUG: rm line
+      for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1] # ter = 'Alaska'
+      #for (ter in c("Gulf of Mexico","Puerto Rico","US Virgin Islands")){ # TODO/DEBUG: rm line
 
         cat(sprintf('  ter %s -- %s\n', ter, Sys.time()))
         ter_s   = str_replace_all(ter,' ','-')
@@ -558,7 +558,7 @@ if (!file.exists(depth_grd)){
   
   # read in raster and rotate to [0,360]
   depth = raster(depth_nc, layer = 'elevation')
-  depth_w = shift(rotate(shift(depth, 180)), 180) # wrap rotate from [-180,180] to [0,360]
+  depth_w = shift(rotate(shift(depth, 180)), 180) # wrap rotate from [0,360] to [-180,180]
   #plot(depth_w)
    
   # helper for tide bbox in [0, 180]

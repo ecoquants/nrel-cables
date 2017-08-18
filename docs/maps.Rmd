@@ -38,37 +38,13 @@ map_energy_sf = function(
   legend_title){
   # ter = 'Hawaii'; energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
   
-  wind_sf = read_sf(wind_geo) %>%
-    filter(!is.na(territory)) %>%
-    mutate(
-      energy = factor(
-        x      = energy_lbl,
-        levels = wind_labels,
-        labels = wind_labels,
-        ordered = T)) %>%
-    select(-energy_num, -energy_lbl, -region) %>%
-    arrange(territory, energy)
-  energy_sf = wind_sf
-  
   d = energy_sf %>% 
     filter(territory==ter)
   cables = lns_d1x %>%
     filter(territory==ter)
-  cables2 = dx2 %>%
-    mutate(
-      depth = factor(
-        x      = depth_factor,
-        levels = depth_labels,
-        labels = depth_labels,
-        ordered = T)) %>%
+  cables2 = cbls2 %>%
     filter(territory==ter)
-  cables3 = dx3  %>%
-    mutate(
-      depth = factor(
-        x      = depth_factor,
-        levels = depth_labels,
-        labels = depth_labels,
-        ordered = T)) %>%
+  cables3 = cbls3  %>%
     filter(territory==ter)
 
   bb = st_bbox(d)
@@ -107,63 +83,63 @@ map_energy_sf = function(
 
 map_tide = function(
   ter,
-  legend_title){
-  # ter = 'West'; legend_title = 'Tidal\npower\n(W/m2)'
+  legend_title='Tidal\npower\n(W/m2)'){
+  # ter = 'Puerto Rico'; legend_title = 'Tidal\npower\n(W/m2)'
+  # ter = 'Alaska'; legend_title = 'Tidal\npower\n(W/m2)'
   
   ter_str = str_replace_all(ter, ' ', '-')
   tif = sprintf('../data/tide_ter-%s.tif', ter_str)
-  r = raster(tif) ()
-  r_r = rotate(r) # [0,360] to [-180,180]
-  r_a = aggregate(r_r, fact=8, fun=max)
-  r_l = projectRasterForLeaflet(r_a)
-  r_l[r_l < 0] = 0
+  r = raster(tif) # plot(r)
   
-  cables = lns_d1x %>%
-    filter(territory==ter) #%>%
-  #   #mutate(geometry = (geometry + c(180,0)) %% c(180) + c(0,0)) %>% # 50 62
-  #   mutate(geometry = (geometry + c(360,0)) %% c(360) + c(0,0)) %>%
-  #    st_bbox()
+  # aggregate and adjust to [-180,180] from [0,360] for leaflet to show
+  r_a = aggregate(r, fact=8, fun=max) %>%
+    shift(-360) %>%
+    cut(breaks = tide_breaks, include.lowest=T)
+  bb = bbox(r_a)
   
-  # cables %>%
-  #   as("Spatial") %>%
-  #   spTransform("+proj=longlat +datum=WGS84") %>%
-  #   bbox()
-  cables2 = dx2 %>%
+  # use cables reprojected to [-180,180]
+  cables = cbls_180 %>%
     filter(territory==ter)
-  cables3 = dx3 %>%
+  cables2 = cbls2_180 %>%
     filter(territory==ter)
-  
-  bb = bbox(r_r)
-  bb = c(xmin=bb[1,1], xmax=bb[1,2], ymin=bb[2,1], ymax=bb[2,2])
-  
-  brks = c(0,500,1000,1500,11000)
-  pal = colorBin(
-    'YlGnBu', values(r_l), bins=brks, 
-    pretty=T, na.color='transparent', reverse=T)
+  cables3 = cbls3_180 %>%
+    filter(territory==ter)
 
-  leaflet() %>% 
-    addProviderTiles('Esri.OceanBasemap') %>%
-    addRasterImage(r_l, colors=pal, opacity=0.8, project=F) %>%
-    addLegend(pal=pal, values=values(r_l), title='Tidal Energy (W/m^2)') %>% 
-    # addPolygons(
-    #   data = cables2, group='Min. Cable (2x)',
-    #   color='red', stroke=F, fillOpacity = 0.3) %>%
-    # addPolygons(
-    #   data = cables3, group='Rec. Cable (3x)',
-    #   color='red', stroke=F, fillOpacity = 0.3) %>%      
+  n_lbl = length(tide_labels)
+  pal_energy = colorFactor(
+    palette = 'BuGn', na.color="#00000000",
+    domain  = 1:n_lbl)
+  pal_depth  = colorFactor('OrRd', cables3$depth, reverse=T)
+
+  m = leaflet() %>% 
+    addProviderTiles('Stamen.TonerLite', group = 'B&W') %>%
+    addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
+    addRasterImage(
+      r_a, group=legend_title,
+      colors=pal_energy, opacity=0.7) %>%
+    addPolygons(
+      data = cables3, group='Min. Cable (2x)',
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, color=NA) %>%
+    addPolygons(
+      data = cables2, group='Rec. Cable (3x)',
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, color=NA) %>%      
     addPolylines(
       data = cables, group='Cables',
-      color='red', opacity = 0.8, weight=1) %>% #,
-    fitBounds(bb[['xmin']],bb[['ymin']],bb[['xmax']],bb[['ymax']]) %>%
-    addLegend(position='bottomright', pal=pal, values=~energy, title=legend_title) %>%
+      color='black', opacity = 0.5, weight=0.4) %>%
+    fitBounds(bb[1,'min'],bb[2,'min'],bb[1,'max'],bb[2,'max']) %>%
+    addLegend(
+      position = 'bottomright', 
+      colors   = pal_energy(1:n_lbl), 
+      labels   = tide_labels,
+      title=legend_title) %>%
+    addLegend(
+      position='bottomright', 
+      pal=pal_depth, values=cables3$depth, title='Cable Depth') %>%
     addLayersControl(
-      baseGroups = c("B&W", "Ocean"),
+      baseGroups = c('Ocean','B&W'),
       overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
       options = layersControlOptions(collapsed=T))
    m
-   
-  #system(sprintf('open %s', fig))
-  #knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
 }
 
 # calculate length of cables / comment to speed up
@@ -193,64 +169,113 @@ lns_d1x = read_sf(lns_d1x_rgn_geo)
 dx2     = read_sf(dx2_depth_geo)
 dx3     = read_sf(dx3_depth_geo)
 usa_dx = read_csv(usa_dx_csv)
+
+cbls2 = dx2 %>%
+  mutate(
+    depth = factor(
+      x      = depth_factor,
+      levels = depth_labels,
+      labels = depth_labels,
+      ordered = T))
+cbls3 = dx3  %>%
+  mutate(
+    depth = factor(
+      x      = depth_factor,
+      levels = depth_labels,
+      labels = depth_labels,
+      ordered = T))
+
+# set to [-180,180] from [0,360] for tide raster leaflet -- hacked at:
+#  [sf::st_transform not honoring +lon_wrap](https://github.com/edzer/sfr/issues/280)
+cbls_180 = lns_d1x %>%
+    mutate(geometry = (geometry + c(360,90)) %% c(-360) - c(0,-360+90)) %>% 
+    st_set_crs(crs_gcs)
+cbls2_180 = cbls2 %>%
+    mutate(geometry = (geometry + c(360,90)) %% c(-360) - c(0,-360+90)) %>% 
+    st_set_crs(crs_gcs)
+cbls3_180 = cbls3  %>%
+    mutate(geometry = (geometry + c(360,90)) %% c(-360) - c(0,-360+90)) %>% 
+    st_set_crs(crs_gcs)
 ```
 
-```{r mapTide, eval=F}
-territories = read_csv(tide_cbls_csv) %>% 
-  filter(territory !='ALL') %>% 
-  .$territory %>% unique()
+# Tide
 
-for (ter in territories){ # ter = 'Hawaii'
-  map_tide(
-    ter = ter,
-    legend_title = 'Tidal\npower\n(W/m2)',
-    fig = sprintf('figs/mapTide_%s', str_replace_all(ter,' ','-')),
-    redo = redo)
-  #system(sprintf('open %s', fig))
-}
-#knitr::include_graphics(sprintf('figs/mapTide_%s.pdf', str_replace_all(territories,' ','-')), dpi=fig_dpi)
+## Alaska
+
+```{r}
+map_tide('Alaska')
 ```
 
-## Wind
+## East
+
+```{r}
+map_tide('East')
+```
+
+## Gulf of Mexico
+
+```{r}
+map_tide('Gulf of Mexico')
+```
+
+## Puerto Rico
+
+```{r}
+map_tide('Puerto Rico')
+```
+
+## US Virgin Islands
+
+```{r}
+map_tide('US Virgin Islands')
+```
+
+## West
+
+```{r}
+map_tide('West')
+```
+
+# Wind
 
 ```{r mapWind_data}
 wind_sf = read_sf(wind_geo) %>%
-  filter(!is.na(territory)) %>%
-  mutate(
+    filter(!is.na(territory)) %>%
+    mutate(
       energy = factor(
         x      = energy_lbl,
         levels = wind_labels,
         labels = wind_labels,
         ordered = T)) %>%
-  select(-energy_num, -energy_lbl, -region) %>%
-  arrange(territory, energy)
+    select(-energy_num, -energy_lbl, -region) %>%
+    arrange(territory, energy)
 ```
 
-### East
+## East
 
 ```{r}
 map_energy_sf(wind_sf, 'East', 'Wind\nspeed\n(m/s)')
 ```
 
-### Gulf of Mexico
+## Gulf of Mexico
 
 ```{r}
 map_energy_sf(wind_sf, 'Gulf of Mexico', 'Wind\nspeed\n(m/s)')
 ```
 
-### Hawaii
+## Hawaii
 
 ```{r}
 map_energy_sf(wind_sf, 'Hawaii', 'Wind\nspeed\n(m/s)')
 ```
 
-### West
+## West
 
 ```{r}
 map_energy_sf(wind_sf, 'West', 'Wind\nspeed\n(m/s)')
 ```
 
-## Wave
+# Wave
 
 ```{r mapWave_data}
 wave_sf = read_sf(wave_geo) %>%
@@ -265,44 +290,43 @@ wave_sf = read_sf(wave_geo) %>%
   arrange(territory, energy)
 ```
 
-### Alaska
+## Alaska
 
 ```{r}
 map_energy_sf(wave_sf, 'Alaska', 'Wave\nenergy\n(kW/m)')
 ```
 
-### East
+## East
 
 ```{r}
 map_energy_sf(wave_sf, 'East', 'Wave\nenergy\n(kW/m)')
 ```
 
-### Gulf of Mexico
+## Gulf of Mexico
 
 ```{r}
 map_energy_sf(wave_sf, 'Gulf of Mexico', 'Wave\nenergy\n(kW/m)')
 ```
 
-### Hawaii
+## Hawaii
 
 ```{r}
 map_energy_sf(wave_sf, 'Hawaii', 'Wave\nenergy\n(kW/m)')
 ```
 
-### Puerto Rico
+## Puerto Rico
 
 ```{r}
 map_energy_sf(wave_sf, 'Puerto Rico', 'Wave\nenergy\n(kW/m)')
 ```
 
-### US Virgin Islands
+## US Virgin Islands
 
 ```{r}
 map_energy_sf(wave_sf, 'US Virgin Islands', 'Wave\nenergy\n(kW/m)')
 ```
 
-
-### West
+## West
 
 ```{r}
 map_energy_sf(wave_sf, 'West', 'Wave\nenergy\n(kW/m)')
