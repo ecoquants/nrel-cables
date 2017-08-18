@@ -72,15 +72,20 @@ wind_geo      = '../data/wind.geojson'
 wind_cbl2_geo = '../data/wind_cable2.geojson'
 wind_cbl3_geo = '../data/wind_cable3.geojson'
 wind_cbls_csv = '../data/wind_cables.csv'
-wind_cbls_depth_csv = '../data/wind_cables_depth.csv'
+wind_cbl2_depth_geo = '../data/wind_cable2_depth.geojson'
+wind_cbl3_depth_geo = '../data/wind_cable3_depth.geojson'
+wind_depth_csv      = '../data/wind_depth.csv'
+wind_depth_cbls_csv = '../data/wind_depth_cables.csv'
 # wave
 wave_shp      = '/Volumes/Best HD/nrel_data_big/nrel.gov/wave/mhk-atlas_wave_wef_ann/wave_wef_ann.shp'
 wave_geo      = '../data/wave.geojson'
 wave_cbl2_geo = '../data/wave_cable2.geojson'
 wave_cbl3_geo = '../data/wave_cable3.geojson'
+wave_cbls_csv = '../data/wave_cables.csv'
 wave_cbl2_depth_geo = '../data/wave_cable2_depth.geojson'
 wave_cbl3_depth_geo = '../data/wave_cable3_depth.geojson'
-wave_cbls_depth_csv = '../data/wave_cables_depth.csv'
+wave_depth_csv      = '../data/wave_depth.csv'
+wave_depth_cbls_csv = '../data/wave_depth_cables.csv'
 # tide
 tide_shps    = list(
   West = '/Volumes/Best HD/nrel_data_big/nrel.gov/tide/tide_data_west/tide_data_west.shp',
