@@ -14,8 +14,22 @@ cbl3_sp = cbl3_sf %>% as('Spatial')
 usa_rgn_s = read_sf(usa_rgn_s_geo)
 usa_rgn = read_sf(usa_rgn_geo)
 
+# depth classes
+tbl_depth_reclass = tribble(
+  ~depth_from, ~depth_to, ~depth_mid,
+  -10000,         0,     -5000,
+  0,       100,        50,
+  100,       200,       150,
+  200,      1000,       600,
+  1000,     10000,      5000)
+depth_levels = c(-5000,      50,       150,         600,     5000)
+depth_labels = c( '<0', '0-100', '100-200', '200-1,000', '>1,000')
+
 # tide ----
-if (!file.exists(tide_cbls_csv) | redo){
+tide_breaks = c(0,500,1000,1500,10753)
+tide_labels = c('0-500','500-1,000','1,000-1,500','>1,500')
+
+if (!file.exists(tide_cbls_csv) | redo){ # TODO / DEBUG: remove | T
   
   # projection of original tide data: `st_crs(tide_east)$proj4string`
   crs_tide = '+proj=longlat +datum=NAD83 +no_defs'
@@ -24,7 +38,7 @@ if (!file.exists(tide_cbls_csv) | redo){
   # NOTE: region (rgn) refers to analytical energy input area, 
   #       whereas territory (ter) is US territory from EEZ subdivisions
   #redo = T
-  if (!file.exists(tide_csv) | redo){ 
+  if (!file.exists(tide_csv) | redo | T){  # TODO / DEBUG: remove | T
     
     process_tide_pts = function(rgn){ # rgn='East' # rgn='West'
       
@@ -100,14 +114,17 @@ if (!file.exists(tide_cbls_csv) | redo){
       # rasterize by territory
       pts = pts %>%
         filter(!is.na(territory))
-      for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1] # ter = 'Alaska'
+      #for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1] # ter = 'Alaska'
+      for (ter in c("Gulf of Mexico","Puerto Rico","US Virgin Islands")){ # TODO/DEBUG: rm line
 
         cat(sprintf('  ter %s -- %s\n', ter, Sys.time()))
-        ter_s = str_replace_all(ter,' ','-')
-        tif   = sprintf('../data/tide_ter-%s.tif', ter_s)
-        csv_r = sprintf('../data/tide_ter-%s_tif.csv', ter_s)
-        csv_c = sprintf('../data/tide_ter-%s_tif-cable.csv', ter_s)
-        geo   = sprintf('../data/tide_ter-%s_pts.geojson', ter)
+        ter_s   = str_replace_all(ter,' ','-')
+        tif     = sprintf('../data/tide_ter-%s.tif', ter_s)
+        csv_r   = sprintf('../data/tide_ter-%s_tif.csv', ter_s)
+        csv_c   = sprintf('../data/tide_ter-%s_tif-cable.csv', ter_s)
+        csv_d   = sprintf('../data/tide_ter-%s_tif-depth.csv', ter_s)
+        #csv_d_c = sprintf('../data/tide_ter-%s_tif-depth-cable.csv', ter_s)
+        geo     = sprintf('../data/tide_ter-%s_pts.geojson', ter)
       
         p = pts %>%
           filter(territory==ter) %>% 
@@ -129,9 +146,7 @@ if (!file.exists(tide_cbls_csv) | redo){
         }
         # stack with area
         s = stack(r, area(r))
-        names(s) = c('pwr_wm2', 'area_km2')
-        
-        # TODO: stack with depth zone
+        names(s) = c('pwr_wm2', 'area_km2') # plot(r)
         
         # get values for whole raster
         if (!file.exists(csv_r) | redo){
@@ -144,6 +159,50 @@ if (!file.exists(tide_cbls_csv) | redo){
         } else {
           v_r = read_csv(csv_r)
         }
+        
+        # depth aligned to r
+        depth_ter_grd = sprintf('../data/depth_%s.grd', str_replace(ter, ' ', '_'))
+        depth_ter = raster(depth_ter_grd)
+        depth_ter = resample(depth_ter, r, method='ngb') %>%
+          crop(r) %>%
+          mask(r)
+        names(depth_ter) = 'depth' # plot(depth_ter)
+        
+        # cross-tabulate depth with tide energy
+        if (!file.exists(csv_d) | T){ # TODO / DEBUG: off  | T
+
+          cell_area_km2 = cellStats(s[['area_km2']],'mean')
+
+          r_r = raster::cut(r, breaks=tide_breaks)
+          names(r_r) = 'energy'
+          # plot(r_r)
+          
+          x = crosstab(depth_ter, r_r)
+          names(x) = c('depth','energy','n')
+          
+          tbl_tide_depth = x %>% # error for East: object 'depth' not found
+            as_tibble() %>%
+            mutate(
+              territory = ter,
+              depth_factor = factor(
+                depth %>% as.numeric(),
+                levels=depth_levels,
+                labels=depth_labels),
+              energy_factor = factor(
+                energy %>% as.numeric(),
+                levels=1:length(tide_labels),
+                labels=tide_labels),
+              area_km2 = n * cell_area_km2) %>%
+            select(territory, depth_factor, energy_factor, area_km2) %>%
+            filter(
+              !is.na(depth_factor),
+              !is.na(energy_factor),
+              area_km2 > 0) # View(tbl_tide_depth)
+          write_csv(tbl_tide_depth, csv_d)
+        }
+
+        s = stack(s, depth_ter)
+        names(s)[length(names(s))] = 'depth'
         
         # extract values of cable overlapping raster
         cat(sprintf('    extract -- %s\n', Sys.time()))
@@ -172,24 +231,45 @@ if (!file.exists(tide_cbls_csv) | redo){
     
   } # end if (!file.exists(tide_tif))
 
-  # tide: summarize table by territory, energy breaks
-  brks = c(0,500,1000,1500,10753)
-  
-  # summarize for all raster values
-  f_v = list.files('../data', 'tide_ter-.*_tif\\.csv$', full.names=T)
-  d_v = bind_rows(lapply(f_v, read_csv)) %>%
-    mutate(
-      energy_cat = cut(pwr_wm2, brks, include.lowest=T)) %>%
-    group_by(territory, energy_cat) %>%
-    summarize(
-      area_km2 = sum(area_km2))
+  # tide: summarize by territory, depth & energy
+
+  # summarize for all energy
+  f_v = list.files('../data', 'tide_ter-.*_tif-depth\\.csv$', full.names=T)
+  d_v = bind_rows(lapply(f_v, read_csv))
+  d_v = d_v %>%
+     mutate(
+       energy = factor(
+         x      = energy_factor,
+         levels = tide_labels,
+         labels = tide_labels,
+         ordered=T),
+       depth = factor(
+         x      = depth_factor,
+         levels = depth_labels,
+         labels = depth_labels,
+         ordered=T)) %>%
+    select(territory, depth, energy, area_km2) %>%
+    arrange(territory, depth, energy)
+  #View(d_v)
+  #   group_by(territory, depth, energy_cat) %>%
+  #   summarize(
+  #     area_km2 = sum(area_km2))
   
   # summarize for overlap with cables
   f_c = list.files('../data', 'tide_ter-.*_tif-cable\\.csv$', full.names=T)
   d_c = bind_rows(lapply(f_c, read_csv)) %>%
     mutate(
-      energy_cat = cut(pwr_wm2, brks, include.lowest=T)) %>%
-    group_by(territory, energy_cat, cable) %>%
+      depth = factor(
+        x      = depth,
+        levels = depth_levels,
+        labels = depth_labels,
+        ordered=T),
+      energy = cut(
+        x      = pwr_wm2, 
+        breaks = tide_breaks, 
+        labels = tide_labels, 
+        ordered_result = T, include.lowest=T)) %>%
+    group_by(territory, depth, energy, cable) %>%
     summarize(
       area_km2 = sum(area_km2)) %>%
     ungroup() %>%
@@ -200,26 +280,25 @@ if (!file.exists(tide_cbls_csv) | redo){
   
   # tide: summmarize ----
   tide_cbls = d_v %>%
-    left_join(d_c, by=c('territory','energy_cat')) %>%
+    left_join(
+      d_c, 
+      by=c('territory','depth','energy')) %>%
     replace_na(list(
       cable2_km2 = 0,
       cable3_km2 = 0)) %>%
     mutate(
-      cable2_pct     = cable2_km2 / area_km2 * 100,
-      cable3_pct     = cable3_km2 / area_km2 * 100) %>%
-    mutate(
-      energy_lbl = factor(energy_cat, levels(energy_cat), labels=c(sprintf('%d-%d', brks[1:3], brks[2:4]), '>1500')),
-      energy_num = factor(energy_cat, levels(energy_cat), labels=brks[1:4]) %>% as.character() %>% as.integer()) %>%
+      cable2_pct = cable2_km2 / area_km2,
+      cable3_pct = cable3_km2 / area_km2) %>%
     select(
-      territory, energy_num, energy_lbl, area_km2,
+      territory, depth, energy, area_km2,
       cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
-    arrange(territory, energy_num)
+    arrange(territory, depth, energy)
   
   # rbind territory=ALL
   tide_cbls = tide_cbls %>%
     bind_rows(
       tide_cbls %>%
-        group_by(energy_num, energy_lbl) %>%
+        group_by(depth, energy) %>%
         summarize(
           area_km2   = sum(area_km2),
           cable2_km2 = sum(cable2_km2),
@@ -229,9 +308,10 @@ if (!file.exists(tide_cbls_csv) | redo){
           cable2_pct     = cable2_km2 / area_km2,
           cable3_pct     = cable3_km2 / area_km2) %>%
         ungroup()) 
+  #View(tide_cbls)
   
   # write to csv
-  tide_cbls %>% write_csv(tide_cbls_csv)
+  tide_cbls %>% write_csv(tide_cbls_depth_csv)
 }
 
 # wave: read ----
@@ -518,16 +598,6 @@ if (!file.exists(depth_grd)){
 } else {
   depth_wc = raster(depth_grd)
 }
-
-tbl_depth_reclass = tribble(
-  ~depth_from, ~depth_to, ~depth_mid,
-  -10000,         0,     -5000,
-       0,       100,        50,
-     100,       200,       150,
-     200,      1000,       600,
-    1000,     10000,      5000)
-depth_levels = c(-5000,      50,       150,         600,     5000)
-depth_labels = c( '<0', '0-100', '100-200', '200-1,000', '>1,000')
 
 # depth per region for extraction of energy resource ---- 
 if (F){
@@ -919,7 +989,7 @@ if (!file.exists(wave_depth_cbls_csv)){
 }
 
 # wind: intersect with depth-binned cables & dissolve on region & energy -----
-wind_labels = c('<=7', '10-11', '7-8', '8-9', '9-10', '11-12')
+wind_labels = c('<=7', '7-8', '8-9', '9-10', '10-11', '11-12')
 if (any(!file.exists(wind_cbl2_depth_geo), !file.exists(wind_cbl3_depth_geo), redo)){
   
   # fix if bad intersections

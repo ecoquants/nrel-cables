@@ -34,6 +34,7 @@ redo = F
 crs_gcs    = leaflet:::epsg4326
 crs_gcs_w = '+proj=longlat +datum=WGS84 +lon_wrap=180'
 
+
 # create_cable-buffer.R paths ----
 gdb           = '../data/SubmarineCables/NOAAChartedSubmarineCables.gdb'
 depth_nc      = '~/github/obis-lat-time-fig/data/GEBCO_2014_2D.nc'        # 1.87 GB -- too big for Github
@@ -59,6 +60,14 @@ lns_d1x_kml   = '../data/lns_d1x.kml'
 land_usaeez_geo = '../data/land_wrld2_usaeez.geojson'
 dx2_depth_geo = sprintf('../data/buf_2xdepth_incr%sm_depth-binned.geojson', d_incr)
 dx3_depth_geo = sprintf('../data/buf_3xdepth_incr%sm_depth-binned.geojson', d_incr)
+
+# factor labels
+depth_levels = c(-5000,      50,       150,         600,     5000)
+depth_labels = c( '<0', '0-100', '100-200', '200-1,000', '>1,000')
+tide_breaks = c(0,500,1000,1500,10753)
+tide_labels = c('0-500','500-1,000','1,000-1,500','>1,500')
+wind_labels = c('<=7', '7-8', '8-9', '9-10', '10-11', '11-12')
+wave_labels = c('0-10','10-20','20-30','>30')
 
 # extract_cable-energy.R paths ----
 # wind

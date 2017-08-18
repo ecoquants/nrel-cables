@@ -32,168 +32,72 @@ if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_k
   opts_chunk$set(echo=F)
 }
 
-fmt_tbl = function(csv, energy_hdr, caption){
-
-  # read_csv(csv) %>%
-  #   mutate(
-  #    cable2_pct = cable2_pct/100, 
-  #    cable3_pct = cable3_pct/100) %>%
-  #   write_csv(csv)
-  
-  d = read_csv(csv) %>%
-    filter(
-      territory != 'ALL',
-      !is.na(territory))
-  
-  # correct for odd flipping from using className='dt-right'
-  d = d %>%
-    mutate(
-      energy_lbl = recode(
-        energy_lbl, 
-        `<=7`='7=>',
-        `>30`='30<',
-        `>1500`='1500<'))
-  
-  hdr = htmltools::withTags(table(
-    class = 'display',
-    thead(
-      tr(
-        th(rowspan=2, 'Territory'),
-        th(rowspan=2, energy_hdr),
-        th(rowspan=2, HTML('Area (km<sup>2</sup>)')),
-        th(colspan=2, 'Min. Cable (2z)'),
-        th(colspan=2, 'Rec. Cable (3z)')),
-      tr(
-        th(HTML('Area (km<sup>2</sup>)')),
-        th('(%)'),
-        th(HTML('Area (km<sup>2</sup>)')),
-        th('(%)')))))
-
-  d %>%
-    mutate(
-      territory  = ifelse(duplicated(territory), '', territory),
-      energy     = factor(energy_num, unique(energy_num), unique(energy_lbl)),
-      area_km2   = accounting(area_km2, digits=0),
-      cable2_km2 = accounting(cable2_km2, digits=0),
-      cable3_km2 = accounting(cable3_km2, digits=0),
-      cable2_pct = percent(cable2_pct, digits=1),
-      cable3_pct = percent(cable3_pct, digits=1)) %>%
-    select(
-      territory, energy, area_km2,
-      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
-    formattable(
-      list(
-        energy     = color_bar('lightblue'),
-        area_km2   = color_bar('lightgray'),
-        cable2_km2 = color_bar('lightpink'),
-        cable3_km2 = color_bar('lightgreen'))) %>%
-    as.datatable(
-      rownames=F, container=hdr, caption=caption,
-      options = list(
-        dom='t', # off: n_entries/search/paging/ordering
-        pageLength = nrow(d), ordering=F,
-        columnDefs = list(list(className='dt-right', targets=1:5))))
-}
-
-plot_cbls = function(
-  csv   = wave_cbls_csv, 
-  #title = 'Wave Energy by Area and Power Class per US Territory',
-  xlab  = 'Wave energy (kW/m)',
-  legend_position      = c(1,0),
-  legend_justification = c(1,0)){ 
-  
-  energy_cbls = read_csv(csv) %>%
-    filter(
-      !is.na(territory),
-      territory != 'ALL') %>%
-    mutate(
-      energy = factor(energy_lbl, unique(energy_lbl), ordered=T),
-      pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
-  
-  #cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Available')
-  cable_ord = c('min_2d'='Min.(2z)', 'rec_3d'='+Rec.(3z)', 'rem'='Free')
-  
-  d_p = energy_cbls %>%
-    mutate(
-      min_2d = cable2_km2,
-      rec_3d = cable3_km2 - cable2_km2,
-      rem    = area_km2 - cable3_km2) %>%
-    select(
-      territory, energy, min_2d, rec_3d, rem) %>%
-    gather(type, km2, -energy, -territory) %>%
-    mutate(
-      type = factor(
-        type,
-        names(cable_ord),
-       cable_ord, ordered=T)) %>%
-    arrange(territory, energy, type)
-  
-  txt_adj = energy_cbls %>% 
-    summarize(txt_adj = max(area_km2)/1000*0.025) %>% 
-    .$txt_adj
-  
-  p = ggplot(
-      data=d_p,
-      aes(x = energy, y = km2/1000, fill=type)) +
-    geom_col() +
-    geom_text(
-      data=energy_cbls, 
-      aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
-      position = position_nudge(y = txt_adj), size=2) +
-    labs(
-      #title=title, 
-      #subtitle='with Cable Overlay (Minimum - Recommended %)', 
-      x=xlab, y='Area (1,000 km^2)', fill='Cable') +
-    theme(
-      legend.justification = legend_justification, 
-      legend.position      = legend_position,
-      axis.text.x = element_text(angle = 90, hjust = 1)) + 
-    facet_wrap(~territory) # facet_wrap(~territory, scales='free_y') # facet_grid(. ~ territory)
-  print(p)
-}
-
-fig_exists = function(fig){ 
-  fig_ext = sprintf('%s.%s', fig, fig_type)
-  file.exists(fig_ext)}
-
 map_energy_sf = function(
   energy_sf,
   ter,
   legend_title){
   # ter = 'Hawaii'; energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
   
+  wind_sf = read_sf(wind_geo) %>%
+    filter(!is.na(territory)) %>%
+    mutate(
+      energy = factor(
+        x      = energy_lbl,
+        levels = wind_labels,
+        labels = wind_labels,
+        ordered = T)) %>%
+    select(-energy_num, -energy_lbl, -region) %>%
+    arrange(territory, energy)
+  energy_sf = wind_sf
+  
   d = energy_sf %>% 
     filter(territory==ter)
   cables = lns_d1x %>%
     filter(territory==ter)
   cables2 = dx2 %>%
+    mutate(
+      depth = factor(
+        x      = depth_factor,
+        levels = depth_labels,
+        labels = depth_labels,
+        ordered = T)) %>%
     filter(territory==ter)
-  cables3 = dx3 %>%
+  cables3 = dx3  %>%
+    mutate(
+      depth = factor(
+        x      = depth_factor,
+        levels = depth_labels,
+        labels = depth_labels,
+        ordered = T)) %>%
     filter(territory==ter)
-  
+
   bb = st_bbox(d)
 
-  pal = colorFactor('YlGnBu', d$energy, reverse=T)
+  pal_energy = colorFactor('BuGn',      d$energy)
+  pal_depth  = colorFactor('OrRd', cables3$depth, reverse=T)
   
   m = leaflet(d) %>% 
-    addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
     addProviderTiles('Stamen.TonerLite', group = 'B&W') %>%
+    addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
     addPolygons(
       group=legend_title,
-      color=NA, smoothFactor = 0.5,
-      fillOpacity = 0.5,
-      fillColor = ~pal(energy)) %>% 
+      fillColor = ~pal_energy(energy), fillOpacity = 0.5, color=NA) %>% 
     addPolygons(
       data = cables2, group='Min. Cable (2x)',
-      color='red', stroke=F, fillOpacity = 0.3) %>%
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, color=NA) %>%
     addPolygons(
       data = cables3, group='Rec. Cable (3x)',
-      color='red', stroke=F, fillOpacity = 0.3) %>%      
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, color=NA) %>%      
     addPolylines(
       data = cables, group='Cables',
-      color='red', opacity = 0.8, weight=1) %>% #,
+      color='black', opacity = 0.5, weight=0.4) %>% #,
     fitBounds(bb[['xmin']],bb[['ymin']],bb[['xmax']],bb[['ymax']]) %>%
-    addLegend(position='bottomright', pal=pal, values=~energy, title=legend_title) %>%
+    addLegend(
+      position='bottomright', 
+      pal=pal_energy, values=~energy, title=legend_title) %>%
+    addLegend(
+      position='bottomright', 
+      pal=pal_depth, values=cables3$depth, title='Cable Depth') %>%
     addLayersControl(
       baseGroups = c('Ocean','B&W'),
       overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
@@ -286,8 +190,8 @@ wrld2   = st_as_sf(map('world2', plot=F, fill=T))
 usa_eez = read_sf(usa_rgn_geo)
 land    = read_sf(land_usaeez_geo)
 lns_d1x = read_sf(lns_d1x_rgn_geo)
-dx2     = read_sf(dx2_geo)
-dx3     = read_sf(dx3_geo)
+dx2     = read_sf(dx2_depth_geo)
+dx3     = read_sf(dx3_depth_geo)
 usa_dx = read_csv(usa_dx_csv)
 ```
 
@@ -311,11 +215,15 @@ for (ter in territories){ # ter = 'Hawaii'
 
 ```{r mapWind_data}
 wind_sf = read_sf(wind_geo) %>%
-  arrange(energy_num) %>%
+  filter(!is.na(territory)) %>%
   mutate(
-    energy = factor(
-      energy_num, unique(energy_num), unique(energy_lbl), ordered=T)) %>%
-  arrange(region, energy)
+      energy = factor(
+        x      = energy_lbl,
+        levels = wind_labels,
+        labels = wind_labels,
+        ordered = T)) %>%
+  select(-energy_num, -energy_lbl, -region) %>%
+  arrange(territory, energy)
 ```
 
 ### East
@@ -349,7 +257,12 @@ wave_sf = read_sf(wave_geo) %>%
   filter(!is.na(territory)) %>%
   mutate(
     energy = factor(
-      energy_num, unique(energy_num), unique(energy_lbl), ordered=T))
+      x      = energy_lbl,
+      levels = wave_labels,
+      labels = wave_labels,
+      ordered = T)) %>%
+  select(-energy_num, -energy_lbl) %>%
+  arrange(territory, energy)
 ```
 
 ### Alaska
