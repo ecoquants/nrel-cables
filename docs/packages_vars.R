@@ -102,4 +102,4 @@ tide_shps    = list(
 tide_res_dd   = 0.005 # tide raster resolution in decimal degrees
 tide_csv      = '../data/tide.csv'
 tide_cbls_csv = '../data/tide_cables.csv'
-tide_cbls_depth_csv = '../data/tide_cables_depth.csv'
+tide_depth_cbls_csv = '../data/tide_cables_depth.csv'

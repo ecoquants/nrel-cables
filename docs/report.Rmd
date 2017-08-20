@@ -697,15 +697,42 @@ read_cbls = function(csv, form){
 }
 
 tbl_form_cbls = map2(
-  c(wind_cbls_csv, wave_cbls_csv, tide_cbls_csv), 
+  c(wind_depth_cbls_csv, wave_depth_cbls_csv, tide_depth_cbls_csv), 
   c('wind','wave','tide'), 
   read_cbls) %>%
   bind_rows() %>%
+  filter(depth_factor != '<0') %>%
+  #select(-territory) %>%
   mutate(
+    depth  = factor(depth_factor, depth_labels, ordered=T),
     energy = factor(
-      x      = sprintf('%s_%04d', form, energy_num), 
-      levels = sprintf('%s_%04d', form, energy_num), 
-      label  = energy_lbl, ordered=T))
+      sprintf('%s %s', energy_factor, c(tide='W/m^2',wave='kW/m',wind='m/s')[form]),
+      c(
+        sprintf('%s W/m^2', tide_labels),
+        sprintf('%s kW/m', wave_labels),
+        sprintf('%s m/s', wind_labels)), 
+      ordered=T)) %>%
+  select(form, depth, energy, area_km2, cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
+  arrange(form, depth, energy)
+
+write_csv(tbl_form_cbls, '../data/energy-depth-cables_all.csv')
+#tbl_form_cbls
+#View(tbl_form_cbls)
+  
+# mutate(
+#   energy = factor(
+#     x      = sprintf('%s_%04d', form, energy_num), 
+#     levels = sprintf('%s_%04d', form, energy_num), 
+#     label  = energy_lbl, ordered=T))
+
+
+# depth_levels = c(-5000,      50,       150,         600,     5000)
+# depth_labels = c( '<0', '0-100', '100-200', '200-1,000', '>1,000')
+# tide_breaks = c(0,500,1000,1500,10753)
+# tide_labels = c('0-500','500-1,000','1,000-1,500','>1,500')
+# wind_labels = c('<=7', '7-8', '8-9', '9-10', '10-11', '11-12')
+# wave_labels = c('0-10','10-20','20-30','>30')
+
 
 cable_ord = c('min_2d'='Min.(2z)', 'rec_3d'='+Rec.(3z)', 'rem'='Free')
   
@@ -759,6 +786,7 @@ e_lbls = c(
     '7=>','7-8',  '8-9','9-10','10-11','11-12', #  1:6
    '0-10',   '10-20',    '20-30',  '30<',       #  7:10
   '0-500','500-1000','1000-1500','1500<')       # 11:14
+
 e_idx = c(1,7,11, 2,8,12, 3, 4,9,13, 5,10,14, 6) # setdiff(1:length(e_lbls), e_idx) 
 e_lkup = setNames(e_idx, 1:14)
 d = d %>% 

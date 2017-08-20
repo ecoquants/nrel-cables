@@ -311,7 +311,7 @@ if (!file.exists(tide_cbls_csv) | redo){ # TODO / DEBUG: remove | T
   #View(tide_cbls)
   
   # write to csv
-  tide_cbls %>% write_csv(tide_cbls_depth_csv)
+  tide_cbls %>% write_csv(tide_depth_cbls_csv)
 }
 
 # wave: read ----
