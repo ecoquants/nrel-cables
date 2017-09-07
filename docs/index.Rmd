@@ -13,4 +13,8 @@ Here is the report in various formats for different purposes:
 - [report.**docx**](./report.docx): track changes with colleagues to review
 - [report.**pdf**](./report.pdf): final portable, static document 
 
-Please also see the interactive [**maps**](http://ecoquants.com/nrel-cables/maps.html).
+Please also see:
+
+- [**maps**](http://ecoquants.com/nrel-cables/maps.html): interactive maps by energy resource and territory
+
+- [github.com/ecoquants/nrel-cables](https://github.com/ecoquants/nrel-cables): source **code** and files
