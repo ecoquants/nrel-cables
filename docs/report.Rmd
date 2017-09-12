@@ -459,6 +459,31 @@ Demand for abundant and diverse resources in the oceans is growing, necessitatin
 The study area consisted of the US waters [@flandersmarineinstitute_maritime_2016], i.e. the 200 nm extent deemed the exclusive economic zone (EEZ), that overlapped with the offshore cable dataset "NOAA Charted Submarine cables in the United States as of December 2012" available through MarineCadastre.gov ^[MarineCadastre.gov cable metadata: https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html]. The territory of the contiguous US was further divided into West, East and Gulf of Mexico territories based on the Gulf of Mexico description from the International Hydrographic Organization (IHO) Sea Areas [@vliz_iho_2017]. To accomodate territories overlapping the international dateline (Hawaii and Alaska), all input and output products were shifted from [-180,180] to [0,360]. For more details on the 12 territories used in this analysis, see Table 1 and Figure \@ref(fig:mapCableTerritories).
 
 ```{r tbl01Territories}
+read_cbls = function(csv, form){
+  read_csv(csv) %>%
+    # filter(
+    #   territory == 'ALL') %>%
+    mutate(
+      form    = form,
+      #energy  = factor(energy_lbl, unique(energy_lbl), ordered=T),
+      pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
+}
+
+# get territories with different energy
+d_ter = map2(
+  c(wind_depth_cbls_csv, wave_depth_cbls_csv, tide_depth_cbls_csv), 
+  c('wind','wave','tide'), 
+  read_cbls) %>%
+  bind_rows() %>%
+  group_by(territory, form) %>%
+  summarize(
+    has_form = T) %>%
+  filter(territory != 'ALL') %>%
+  spread(form, has_form)
+
+# TODO: resume after fixing tide_ter-*_tif-cable.csv -> tide_ter-*_tif-depth.csv for not West/Alaska
+
+
 usa = read_sf(usa_rgn_s_geo)
 st_geometry(usa) = NULL # drop geometry column
 
@@ -686,36 +711,7 @@ tbl %>%
 Generally the highest proportion of energy is in the lower classes least likely for development where the highest area of overlap with cable buffers also exist (Figure \@ref(fig:pltEnergy); Table 3). The highest wind speed classes (10-11 & 11-12 m/s) are however also occupied by the highest percentage of cable buffer overlap (55.7% & 39.8% for 3z, 39.8% & 15.9% for 2z respectively). These uncommon high wind speed areas are limited to Hawaii and West territories (Table 6; Figure \@ref(fig:pltWind) for bargraph; Figure \@ref(fig:HawaiiMapWind) for Hawaii wind map; Figure \@ref(fig:WestMapWind) for West wind map). Overall wave energy has a bimodal distribution, most abundant in the lowest class (997,570 km^2^ for 0-10 kW/m) with a sharp drop at the next lowest class (292,692 km^2^ for 0-10 kW/m) and then ramping up to roughly half the highest class (532,533 km^2^ for >30 kW/m). Overlap with cable buffers for the highest two classes (20-30 & >30 kW/m) is just over 5% (5.2% & 5% for 2z, 6.8% & 6.7% for 3z). Similar to wind, these high energy wave classes are limited to the Pacific territories of Hawaii, West and  Alaska (wind for Alaska was not available) (Table 5; Figure \@ref(fig:pltWave) for bargraph; Figure \@ref(fig:HawaiiMapWave) for Hawaii wave map; Figure \@ref(fig:WestMapWave) for West wave map; Figure \@ref(fig:AlaskaMapWave) for Alaska wave map). Tidal power is extremely dominated by the lowest energy class of 0-500 W/m^2^ covering 403,781 km^2^, which is 99.6% of the total area assessed. The cable overlap for the rare higher energy areas is at most 20.1% (12 of 59 km^2^) for 500-1,000 W/m^2^ in the West and less than 3% for the even rarer higher energy classes of 1,000-1,500 or >1,500 found only in Alaska or the East.
 
 ```{r pltEnergy, fig.cap='Energy by area and power class per US territory with cable overlay (minimum - recommended %).'}
-read_cbls = function(csv, form){
-  read_csv(csv) %>%
-    filter(
-      territory == 'ALL') %>%
-    mutate(
-      form    = form,
-      #energy  = factor(energy_lbl, unique(energy_lbl), ordered=T),
-      pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
-}
 
-tbl_form_cbls = map2(
-  c(wind_depth_cbls_csv, wave_depth_cbls_csv, tide_depth_cbls_csv), 
-  c('wind','wave','tide'), 
-  read_cbls) %>%
-  bind_rows() %>%
-  filter(depth_factor != '<0') %>%
-  #select(-territory) %>%
-  mutate(
-    depth  = factor(depth_factor, depth_labels, ordered=T),
-    energy = factor(
-      sprintf('%s %s', energy_factor, c(tide='W/m^2',wave='kW/m',wind='m/s')[form]),
-      c(
-        sprintf('%s W/m^2', tide_labels),
-        sprintf('%s kW/m', wave_labels),
-        sprintf('%s m/s', wind_labels)), 
-      ordered=T)) %>%
-  select(form, depth, energy, area_km2, cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
-  arrange(form, depth, energy)
-
-write_csv(tbl_form_cbls, '../data/energy-depth-cables_all.csv')
 #tbl_form_cbls
 #View(tbl_form_cbls)
   
@@ -736,6 +732,30 @@ write_csv(tbl_form_cbls, '../data/energy-depth-cables_all.csv')
 
 cable_ord = c('min_2d'='Min.(2z)', 'rec_3d'='+Rec.(3z)', 'rem'='Free')
   
+tbl_form_cbls = map2(
+  c(wind_depth_cbls_csv, wave_depth_cbls_csv, tide_depth_cbls_csv), 
+  c('wind','wave','tide'), 
+  read_cbls) %>%
+  bind_rows() %>%
+  filter(
+    territory == 'ALL',
+    depth_factor != '<0') %>%
+  #select(-territory) %>%
+  mutate(
+    depth  = factor(depth_factor, depth_labels, ordered=T),
+    energy = factor(
+      sprintf('%s %s', energy_factor, c(tide='W/m^2',wave='kW/m',wind='m/s')[form]),
+      c(
+        sprintf('%s W/m^2', tide_labels),
+        sprintf('%s kW/m', wave_labels),
+        sprintf('%s m/s', wind_labels)), 
+      ordered=T)) %>%
+  select(form, depth, energy, area_km2, cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
+  arrange(form, depth, energy)
+
+write_csv(tbl_form_cbls, '../data/energy-depth-cables_all.csv')
+
+
 d_p = tbl_form_cbls %>%
   mutate(
     min_2d = cable2_km2,

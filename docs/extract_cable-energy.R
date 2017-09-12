@@ -18,18 +18,13 @@ usa_rgn = read_sf(usa_rgn_geo)
 tbl_depth_reclass = tribble(
   ~depth_from, ~depth_to, ~depth_mid,
   -10000,         0,     -5000,
-  0,       100,        50,
-  100,       200,       150,
-  200,      1000,       600,
-  1000,     10000,      5000)
-depth_levels = c(-5000,      50,       150,         600,     5000)
-depth_labels = c( '<0', '0-100', '100-200', '200-1,000', '>1,000')
+       0,       100,        50,
+     100,       200,       150,
+     200,      1000,       600,
+    1000,     10000,      5000)
 
 # tide ----
-tide_breaks = c(0,500,1000,1500,10753)
-tide_labels = c('0-500','500-1,000','1,000-1,500','>1,500')
-
-if (!file.exists(tide_cbls_csv) | redo){ # TODO / DEBUG: remove | T
+if (!file.exists(tide_cbls_csv) | redo){ 
   
   # projection of original tide data: `st_crs(tide_east)$proj4string`
   crs_tide = '+proj=longlat +datum=NAD83 +no_defs'
@@ -115,7 +110,7 @@ if (!file.exists(tide_cbls_csv) | redo){ # TODO / DEBUG: remove | T
       pts = pts %>%
         filter(!is.na(territory))
       for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1] # ter = 'Alaska'
-      #for (ter in c("Gulf of Mexico","Puerto Rico","US Virgin Islands")){ # TODO/DEBUG: rm line
+      #for (ter in c("Gulf of Mexico","Puerto Rico","US Virgin Islands")){ # TODO/DEBUG: rm line # ter="Puerto Rico"
 
         cat(sprintf('  ter %s -- %s\n', ter, Sys.time()))
         ter_s   = str_replace_all(ter,' ','-')
@@ -185,7 +180,7 @@ if (!file.exists(tide_cbls_csv) | redo){ # TODO / DEBUG: remove | T
             mutate(
               territory = ter,
               depth_factor = factor(
-                depth %>% as.numeric(),
+                depth %>% as.character(),
                 levels=depth_levels,
                 labels=depth_labels),
               energy_factor = factor(
@@ -198,6 +193,7 @@ if (!file.exists(tide_cbls_csv) | redo){ # TODO / DEBUG: remove | T
               !is.na(depth_factor),
               !is.na(energy_factor),
               area_km2 > 0) # View(tbl_tide_depth)
+          
           write_csv(tbl_tide_depth, csv_d)
         }
 
@@ -225,7 +221,8 @@ if (!file.exists(tide_cbls_csv) | redo){ # TODO / DEBUG: remove | T
       
     } # end process_tide_pts = function()
     
-    for (rgn in names(tide_shps)){ # rgn='West' # 20 min
+    #for (rgn in names(tide_shps)){ # rgn='East' # 20 min
+    for (rgn in c('East')){ # TODO / DEBUG: rm
       process_tide_pts(rgn)  
     }
     
