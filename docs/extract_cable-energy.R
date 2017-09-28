@@ -602,7 +602,7 @@ if (!file.exists(depth_grd)){
 
 # depth per region for extraction of energy resource ---- 
 if (F){
-  for (i in seq_along(unique(usa_rgn_s$territory))){ # i=1
+  for (i in seq_along(unique(usa_rgn_s$territory))){ # i=9
     ter = sort(unique(usa_rgn_s$territory))[i]
     cat(sprintf('%02d: %s -- %s\n', i, ter, Sys.time()))
   
@@ -663,7 +663,7 @@ if (!file.exists(depth_m_cbl3_grd)){
 }
 
 # intersect cable buffers with reclassified depth raster ----- 
-if (!file.exists(dx2_depth_geo) | !file.exists(dx2_depth_geo)){
+if (!file.exists(dx2_depth_geo) | !file.exists(dx3_depth_geo)){
   
   # create depth reclass table
   d_max = cellStats(depth_m_cbl3, 'max') # 7511
@@ -807,7 +807,6 @@ if (!file.exists(dx2_depth_geo) | !file.exists(dx2_depth_geo)){
 }
 
 # wave: intersect with depth-binned cables & dissolve on region & energy -----
-wave_labels = c('0-10','10-20','20-30','>30')
 if (any(!file.exists(wave_cbl2_depth_geo), !file.exists(wave_cbl3_depth_geo), redo)){
   
   # fix if bad intersections
@@ -888,7 +887,7 @@ wave_depth_cbl3 = read_sf(wave_cbl3_depth_geo) %>%
       ordered = T))
 
 # wave: extract depth with energy by region -----
-if (!file.exists(wave_depth_csv)){
+if (!file.exists(wave_depth_cbls_csv)){
   lst_wave_depth = list()
   for (i in seq_along(na.omit(unique(wave$territory)))){ # i=5
     ter = sort(na.omit(unique(wave$territory)))[i]
@@ -899,40 +898,96 @@ if (!file.exists(wave_depth_csv)){
     #plot(depth_ter)
     
     system.time({
-      wave_ter = rasterize(
+      r_wave = rasterize(
         wave %>%
           filter(territory==ter) %>% 
           as('Spatial'), 
         depth_ter, 
         'energy_factor')
+      
+      r_ter = rasterize(
+        usa_rgn %>%
+          filter(territory==ter) %>% # plot()
+          as('Spatial'), 
+        depth_ter, 
+        1)
+      
+      r_cbl2 = rasterize(
+        cbl2_sf %>%
+          filter(territory==ter) %>% 
+          as('Spatial'), 
+        depth_ter, 
+        1) # plot(r_cbl2)
+      
+      r_cbl3 = rasterize(
+        cbl3_sf %>%
+          filter(territory==ter) %>% 
+          as('Spatial'), 
+        depth_ter, 
+        1) # plot(r_cbl3)
+      
     }) # Puerto Rico: 6 sec; Alaska: 1:39 min:sec
-    # plot(wave_ter)
-    depth_ter = mask(depth_ter, wave_ter)
-    cell_area_km2 = cellStats(area(wave_ter),'mean')
     
-    lst_wave_depth[[ter]] = crosstab(depth_ter, wave_ter) %>%
+    s_wave = stack(depth_ter, r_wave, r_ter, r_cbl2, r_cbl3, area(r_ter))
+    names(s_wave) = c('depth','wave','ter1','cbl2','cbl3','cell_km2')
+    
+    # apply mask
+    r_mask = !is.na(r_wave) & !is.na(depth_ter) & depth_ter > 0 & !is.na(r_ter)
+    s_wave = mask(s_wave, r_mask, maskvalue=0) # plot(s_wave)
+
+    d_wave = getValues(s_wave) %>% 
       as_tibble() %>%
+      filter(!is.na(depth)) %>%
       mutate(
-        territory = ter,
         depth_factor = factor(
-          Var1 %>% as.numeric(), 
-          levels=1:length(depth_labels), 
-          labels=depth_labels),
+          x      = depth,
+          levels = depth_levels,
+          labels = depth_labels,
+          ordered = T),
         energy_factor = factor(
-          Var2 %>% as.numeric(), 
-          levels=1:length(wave_labels), 
-          labels=wave_labels),
-        area_km2 = Freq * cell_area_km2) %>%
-      select(territory, depth_factor, energy_factor, area_km2) %>%
-      filter(
-        !is.na(depth_factor),
-        !is.na(energy_factor),
-        area_km2 > 0)
-  }
-  wave_depth = bind_rows(lst_wave_depth)
-  write_csv(wave_depth, wave_depth_csv)
+          x      = wave,
+          levels = seq(1, length(wave_labels)),
+          labels = wave_labels,
+          ordered = T)) %>%
+      group_by(depth_factor, energy_factor) %>%
+      summarize(
+        area_km2   = sum(ter1*cell_km2, na.rm=T),
+        cable2_km2 = sum(cbl2*cell_km2, na.rm=T),
+        cable3_km2 = sum(cbl3*cell_km2, na.rm=T)) %>%
+      mutate(
+        cable2_pct = cable2_km2 / area_km2,
+        cable3_pct = cable3_km2 / area_km2) %>%
+      mutate(
+        territory=ter) %>%
+      select(
+        territory, depth_factor, energy_factor,
+        area_km2, cable2_km2, cable3_km2, cable2_pct, cable3_pct)
+    # View(d_wave)
+    lst_wave_depth[[ter]] = d_wave
+  } # end iterate over territories
+  
+  # bind all territories
+  wave_depth = bind_rows(lst_wave_depth) # View(wave_depth)
+  
+  # rbind territory=ALL
+  wave_depth = wave_depth %>%
+    bind_rows(
+      wave_depth %>%
+        group_by(depth_factor, energy_factor) %>%
+        summarize(
+          area_km2   = sum(area_km2),
+          cable2_km2 = sum(cable2_km2),
+          cable3_km2 = sum(cable3_km2),
+          territory = 'ALL') %>%
+        mutate(
+          cable2_pct = cable2_km2 / area_km2,
+          cable3_pct = cable3_km2 / area_km2) %>%
+        ungroup()) # View(wave_depth)
+  
+  write_csv(wave_depth, wave_depth_cbls_csv)
 } # 2:42 min:sec
-wave_depth = read_csv(wave_depth_csv) %>%
+
+wave_depth_cbls = read_csv(wave_depth_cbls_csv) %>%
   mutate(
     depth_factor = factor(
       x      = depth_factor,
@@ -943,54 +998,9 @@ wave_depth = read_csv(wave_depth_csv) %>%
       x      = energy_factor,
       levels = wave_labels,
       labels = wave_labels,
-      ordered = T))
-
-# wave: summarize depth & energy by region with cables into table -----
-if (!file.exists(wave_depth_cbls_csv)){
-  
-  wave_depth_cbls = wave_depth %>% 
-    left_join(
-      wave_depth_cbl2 %>% 
-        st_set_geometry(NULL) %>%
-        rename(cable2_km2=area_km2),
-      by=c('territory','depth_factor','energy_factor')) %>%
-    left_join(
-      wave_depth_cbl3 %>% 
-        st_set_geometry(NULL) %>%
-        rename(cable3_km2=area_km2),
-      by=c('territory','depth_factor','energy_factor')) %>%
-    replace_na(list(
-      cable2_km2 = 0,
-      cable3_km2 = 0)) %>%
-    mutate(
-      cable2_pct     = cable2_km2 / area_km2,
-      cable3_pct     = cable3_km2 / area_km2) %>%
-    select(
-      territory,
-      depth_factor, energy_factor, area_km2,
-      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
-    arrange(territory, depth_factor, energy_factor) # View(wave_cbls)
-  
-  # rbind territory=ALL
-  wave_depth_cbls = wave_depth_cbls %>%
-    bind_rows(
-      wave_depth_cbls %>%
-        group_by(depth_factor, energy_factor) %>%
-        summarize(
-          area_km2   = sum(area_km2),
-          cable2_km2 = sum(cable2_km2),
-          cable3_km2 = sum(cable3_km2),
-          territory = 'ALL') %>%
-        mutate(
-          cable2_pct = cable2_km2 / area_km2,
-          cable3_pct = cable3_km2 / area_km2) %>%
-        ungroup()) # View(wave_depth_cbls)
-  
-  wave_depth_cbls %>% write_csv(wave_depth_cbls_csv)
-}
+      ordered = T)) View(wave_depth_cbls)
 
 # wind: intersect with depth-binned cables & dissolve on region & energy -----
-wind_labels = c('<=7', '7-8', '8-9', '9-10', '10-11', '11-12')
 if (any(!file.exists(wind_cbl2_depth_geo), !file.exists(wind_cbl3_depth_geo), redo)){
   
   # fix if bad intersections
@@ -1070,10 +1080,19 @@ wind_depth_cbl3 = read_sf(wind_cbl3_depth_geo) %>%
       labels = wind_labels,
       ordered = T))
 
+wind = read_sf(wind_geo) %>%
+  mutate(
+    energy_factor = factor(
+      x      = energy_lbl,
+      levels = wind_labels,
+      labels = wind_labels,
+      ordered = T))
+
 # wind: extract depth with energy by region -----
-if (!file.exists(wind_depth_csv)){
+if (!file.exists(wind_depth_cbls_csv)){
+
   lst_wind_depth = list()
-  for (i in seq_along(na.omit(unique(wind$territory)))){ # i=5
+  for (i in seq_along(na.omit(unique(wind$territory)))){ # i=1
     ter = sort(na.omit(unique(wind$territory)))[i]
     cat(sprintf('%02d: %s -- %s\n', i, ter, Sys.time()))
     
@@ -1081,83 +1100,79 @@ if (!file.exists(wind_depth_csv)){
     depth_ter = raster(depth_ter_grd)
     #plot(depth_ter)
     
-    system.time({
-      wind_ter = rasterize(
-        wind %>%
-          filter(territory==ter) %>% 
-          as('Spatial'), 
-        depth_ter, 
-        'energy_factor')
-    }) # Puerto Rico: 6 sec; Alaska: 1:39 min:sec
-    # plot(wind_ter)
-    depth_ter = mask(depth_ter, wind_ter)
-    cell_area_km2 = cellStats(area(wind_ter),'mean')
+    r_wind = rasterize(
+      wind %>%
+        filter(territory==ter) %>% 
+        as('Spatial'), 
+      depth_ter, 
+      'energy_factor')
     
-    lst_wind_depth[[ter]] = crosstab(depth_ter, wind_ter) %>%
+    r_ter = rasterize(
+      usa_rgn %>%
+        filter(territory==ter) %>% # plot()
+        as('Spatial'), 
+      depth_ter, 
+      1)
+    
+    r_cbl2 = rasterize(
+      cbl2_sf %>%
+        filter(territory==ter) %>% 
+        as('Spatial'), 
+      depth_ter, 
+      1) # plot(r_cbl2)
+    
+    r_cbl3 = rasterize(
+      cbl3_sf %>%
+        filter(territory==ter) %>% 
+        as('Spatial'), 
+      depth_ter, 
+      1) # plot(r_cbl3)
+      
+    s_wind = stack(depth_ter, r_wind, r_ter, r_cbl2, r_cbl3, area(r_ter))
+    names(s_wind) = c('depth','wind','ter1','cbl2','cbl3','cell_km2')
+    
+    # apply mask
+    r_mask = !is.na(r_wind) & !is.na(depth_ter) & depth_ter > 0 & !is.na(r_ter)
+    s_wind = mask(s_wind, r_mask, maskvalue=0) # plot(s_wind)
+    
+    d_wind = getValues(s_wind) %>% 
       as_tibble() %>%
+      filter(!is.na(depth)) %>%
       mutate(
-        territory = ter,
         depth_factor = factor(
-          Var1 %>% as.numeric(), 
-          levels=1:length(depth_labels), 
-          labels=depth_labels),
+          x      = depth,
+          levels = depth_levels,
+          labels = depth_labels,
+          ordered = T),
         energy_factor = factor(
-          Var2 %>% as.numeric(), 
-          levels=1:length(wind_labels), 
-          labels=wind_labels),
-        area_km2 = Freq * cell_area_km2) %>%
-      select(territory, depth_factor, energy_factor, area_km2) %>%
-      filter(
-        !is.na(depth_factor),
-        !is.na(energy_factor),
-        area_km2 > 0)
-  }
-  wind_depth = bind_rows(lst_wind_depth)
-  write_csv(wind_depth, wind_depth_csv)
-} # 1:11 min:sec
-wind_depth = read_csv(wind_depth_csv) %>%
-  mutate(
-    depth_factor = factor(
-      x      = depth_factor,
-      levels = depth_labels,
-      labels = depth_labels,
-      ordered = T),
-    energy_factor = factor(
-      x      = energy_factor,
-      levels = wind_labels,
-      labels = wind_labels,
-      ordered = T))
-
-# wind: summarize depth & energy by region with cables into table -----
-if (!file.exists(wind_depth_cbls_csv)){
+          x      = wind,
+          levels = seq(1, length(wind_labels)),
+          labels = wind_labels,
+          ordered = T)) %>%
+      group_by(depth_factor, energy_factor) %>%
+      summarize(
+        area_km2   = sum(ter1*cell_km2, na.rm=T),
+        cable2_km2 = sum(cbl2*cell_km2, na.rm=T),
+        cable3_km2 = sum(cbl3*cell_km2, na.rm=T)) %>%
+      mutate(
+        cable2_pct = cable2_km2 / area_km2,
+        cable3_pct = cable3_km2 / area_km2) %>%
+      mutate(
+        territory=ter) %>%
+      select(
+        territory, depth_factor, energy_factor,
+        area_km2, cable2_km2, cable3_km2, cable2_pct, cable3_pct)
+    # View(d_wind)
+    lst_wind_depth[[ter]] = d_wind
+  } # end iterate over territories
   
-  wind_depth_cbls = wind_depth %>% 
-    left_join(
-      wind_depth_cbl2 %>% 
-        st_set_geometry(NULL) %>%
-        rename(cable2_km2=area_km2),
-      by=c('territory','depth_factor','energy_factor')) %>%
-    left_join(
-      wind_depth_cbl3 %>% 
-        st_set_geometry(NULL) %>%
-        rename(cable3_km2=area_km2),
-      by=c('territory','depth_factor','energy_factor')) %>%
-    replace_na(list(
-      cable2_km2 = 0,
-      cable3_km2 = 0)) %>%
-    mutate(
-      cable2_pct     = cable2_km2 / area_km2,
-      cable3_pct     = cable3_km2 / area_km2) %>%
-    select(
-      territory,
-      depth_factor, energy_factor, area_km2,
-      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
-    arrange(territory, depth_factor, energy_factor) # View(wind_cbls)
+  # bind all territories
+  wind_depth = bind_rows(lst_wind_depth)
   
   # rbind territory=ALL
-  wind_depth_cbls = wind_depth_cbls %>%
+  wind_depth = wind_depth %>%
     bind_rows(
-      wind_depth_cbls %>%
+      wind_depth %>%
         group_by(depth_factor, energy_factor) %>%
         summarize(
           area_km2   = sum(area_km2),
@@ -1169,6 +1184,18 @@ if (!file.exists(wind_depth_cbls_csv)){
           cable3_pct = cable3_km2 / area_km2) %>%
         ungroup()) # View(wind_depth_cbls)
   
-  wind_depth_cbls %>% write_csv(wind_depth_cbls_csv)
+  write_csv(wind_depth, wind_depth_cbls_csv)
 }
 
+wind_depth_cbls = read_csv(wind_depth_cbls_csv) %>%
+  mutate(
+    depth_factor = factor(
+      x      = depth_factor,
+      levels = depth_labels,
+      labels = depth_labels,
+      ordered = T),
+    energy_factor = factor(
+      x      = energy_factor,
+      levels = wind_labels,
+      labels = wind_labels,
+      ordered = T)) # View(wind_depth_cbls)
