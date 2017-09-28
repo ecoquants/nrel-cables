@@ -60,6 +60,7 @@ lns_d1x_kml   = '../data/lns_d1x.kml'
 land_usaeez_geo = '../data/land_wrld2_usaeez.geojson'
 dx2_depth_geo = sprintf('../data/buf_2xdepth_incr%sm_depth-binned.geojson', d_incr)
 dx3_depth_geo = sprintf('../data/buf_3xdepth_incr%sm_depth-binned.geojson', d_incr)
+ter_other_txt = '../data/territories_other.txt'
 
 # factor labels
 depth_levels = c(-5000,      50,       150,         600,     5000)

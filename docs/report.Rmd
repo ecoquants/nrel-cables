@@ -8,16 +8,16 @@ date: |
   | ^1^: EcoQuants, Santa Barbara, CA
   | ^2^: National Renewable Energy Lab, Golden, CO \newline
 output:
-  bookdown::html_document2:
-    number_sections: yes
-    toc: yes
-    toc_depth: 4
-    toc_float: yes
   bookdown::pdf_document2:
     keep_tex: yes
     number_sections: yes
     toc: yes
     toc_depth: 4
+  bookdown::html_document2:
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
   bookdown::word_document2:
     toc: yes
     toc_depth: 4
@@ -458,62 +458,7 @@ Demand for abundant and diverse resources in the oceans is growing, necessitatin
 
 The study area consisted of the US waters [@flandersmarineinstitute_maritime_2016], i.e. the 200 nm extent deemed the exclusive economic zone (EEZ), that overlapped with the offshore cable dataset "NOAA Charted Submarine cables in the United States as of December 2012" available through MarineCadastre.gov ^[MarineCadastre.gov cable metadata: https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html]. The territory of the contiguous US was further divided into West, East and Gulf of Mexico territories based on the Gulf of Mexico description from the International Hydrographic Organization (IHO) Sea Areas [@vliz_iho_2017]. To accomodate territories overlapping the international dateline (Hawaii and Alaska), all input and output products were shifted from [-180,180] to [0,360]. For more details on the 12 territories used in this analysis, see Table 1 and Figure \@ref(fig:mapCableTerritories).
 
-```{r tbl01Territories}
-read_cbls = function(csv, form){
-  read_csv(csv) %>%
-    # filter(
-    #   territory == 'ALL') %>%
-    mutate(
-      form    = form,
-      #energy  = factor(energy_lbl, unique(energy_lbl), ordered=T),
-      pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
-}
-
-# get territories with different energy
-d_ter = map2(
-  c(wind_depth_cbls_csv, wave_depth_cbls_csv, tide_depth_cbls_csv), 
-  c('wind','wave','tide'), 
-  read_cbls) %>%
-  bind_rows() %>%
-  group_by(territory, form) %>%
-  summarize(
-    has_form = T) %>%
-  filter(territory != 'ALL') %>%
-  spread(form, has_form)
-
-# TODO: resume after fixing tide_ter-*_tif-cable.csv -> tide_ter-*_tif-depth.csv for not West/Alaska
-
-
-usa = read_sf(usa_rgn_s_geo)
-st_geometry(usa) = NULL # drop geometry column
-
-tbl = usa %>%
-  arrange(territory) %>%
-  mutate(
-    Id         = row_number(),
-    area_km2   = accounting(area_km2, digits=0)) %>%
-  select(
-    Id, Territory=territory, `Area (km2)`=area_km2)
-
-tbl %>%
-  formattable(list(
-    `Area (km2)` = color_bar('lightgray'))) %>%
-  as.datatable(
-    rownames = F,
-    caption  = 'Table 1: Territories within the United States exclusive economic zone (EEZ) and having submarine cables.',
-    options  = list(
-      dom='t', # off: n_entries/search/paging/ordering
-      pageLength = nrow(tbl), ordering=F,
-      columnDefs = list(list(className='dt-right', targets=c(0,2)))))
-# format_table(
-#   tbl,
-#   formatters=list(
-#     `Area (km2)` = color_bar('lightgray')),
-#   format = 'pandoc',
-#   caption = 'Territories within the United States exclusive economic zone (EEZ) and having submarine cables.')
-```
-
-```{r mapCableTerritories, fig.cap='Map of NOAA Charted Submarine cables as of December 2012 within the exclusive economic zone (EEZ; 200 nm) of United States territories.'}
+```{r mapCableTerritories, fig.cap='Map of NOAA charted submarine cables (red lines) as of December 2012 within the exclusive economic zone (EEZ; 200 nm) overlapping with United States territories.'}
 fig = 'figs/mapCableTerritories' # redo=T
 fig_ext = sprintf('%s.%s', fig, fig_type) # redo=T
 if (!file.exists(fig_ext) | redo){
@@ -558,14 +503,114 @@ if (!file.exists(fig_ext) | redo){
   }
   print(p)
   dev.off()
-  #system(sprintf('open %s', fig))
 }
+#system(sprintf('open %s', fig_ext))
 knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
+```
+
+```{r tbl01Territories}
+# territories with energy
+ter_energy = map2(
+  c(wind_depth_cbls_csv, wave_depth_cbls_csv, tide_depth_cbls_csv), 
+  c('wind','wave','tide'), 
+  read_cbls) %>%
+  bind_rows() %>%
+  group_by(territory, form) %>%
+  summarize(
+    has_form = T) %>%
+  filter(territory != 'ALL') %>%
+  spread(form, has_form)
+write_csv(ter_energy, '../data/energy_territories.csv')
+
+# territory cable lengths
+ter_cables = read_sf(lns_d1x_rgn_geo) %>%
+  mutate(
+    length=st_length(geometry)) %>%
+  st_set_geometry(NULL) %>%
+  group_by(territory) %>%
+  summarize(
+    length=sum(length, na.rm=T))
+
+# Other territories: lump those without any energy
+ter_other = setdiff(ter_cables$territory, ter_energy$territory)
+# paste(ter_other, collapse=', ') # Guam, Johnston Atoll, N Mariana Islands, Palmyra Atoll, Wake Island
+write_lines(ter_other, ter_other_txt)
+
+# ter_cables: summarize other 
+ter_cables = ter_cables %>%
+  filter(
+    !territory %in% ter_other) %>%
+  bind_rows(
+    tibble(
+      territory = 'Other',
+      length = ter_cables %>%
+        filter(
+          territory %in% ter_other) %>%
+        summarize(length=sum(length)) %>%
+        .$length)) %>%
+  mutate(length_km = length %>% as.numeric() / 1000) %>%
+  select(territory, length_km)
+
+# territory areas
+ter_area = read_sf(usa_rgn_s_geo) %>%
+  select(territory, area_km2) %>% 
+  st_set_geometry(NULL) #%>%
+# ter_area: summarize Other
+ter_area = ter_area %>%
+  filter(
+    !territory %in% ter_other) %>%
+  bind_rows(
+    tibble(
+      territory = 'Other',
+      area_km2 = ter_area %>%
+        filter(
+          territory %in% ter_other) %>%
+        summarize(area_km2=sum(area_km2)) %>%
+        .$area_km2))
+  
+ter_smry = ter_area %>%
+  left_join(
+    ter_cables, by='territory') %>%
+  left_join(
+    ter_energy, by='territory') %>%
+  mutate(
+    length_km = accounting(round(length_km), format='d'),
+    area_km2  = accounting(round(area_km2), format='d'),
+    tide  = ifelse(!is.na(tide), '✓', ''),
+    wave  = ifelse(!is.na(wave), '✓', ''),
+    wind  = ifelse(!is.na(wind), '✓', '')) %>%
+  select(
+    Territory     = territory,
+    `Territory (km2)` = area_km2,
+    `Cable (km)`    = length_km,
+    `Tidal` = tide,
+    `Wave`  = wave,
+    `Wind`  = wind)
+
+ter_smry %>%
+  formattable(list(
+    `Territory (km2)` = color_bar('lightgray'),
+    `Cable (km)`    = color_bar('lightgray'))) %>%
+  as.datatable(
+    rownames = F,
+    caption  = 'Table 1: Territories having submarine cables within the United States exclusive economic zone (EEZ) of 200 nm. Territory area (km2) and summed length of submarine cables (km) are reported with light gray horizontal bars to visually indicate value relative to rest of column. Remaining columns indicate whether energy resources (tidal, wave or wind) are characterized for the territory. Territories having submarine cables but no energy resource characterization are lumped into "Other" territories: Guam, Johnston Atoll, N Mariana Islands, Palmyra Atoll, Wake Island.',
+    options  = list(
+      dom='t', # off: n_entries/search/paging/ordering
+      pageLength = nrow(tbl), ordering=F,
+      columnDefs = list(
+        list(className='dt-right', targets=0:2),
+        list(className='dt-center', targets=3:5))))
 ```
 
 Bathymetric depth comes from the [GEBCO 30 arc-second grid](http://www.gebco.net/data_and_products/gridded_bathymetry_data/gebco_30_second_grid/)^[GEBCO_2014 Grid, version 20150318, www.gebco.net].
 
 The marine renewable energy datasets are from NREL and accessible online via NREL's Wind Prospector^[NREL Wind Prospector: https://maps.nrel.gov/wind-prospector/] and MHK Atlas^[NREL MHK Atlas: https://maps.nrel.gov/mhk-atlas]. Tidal data were modeled using the Regional Ocean Modeling System and calibrated with available measurements of tidal current speed and water level surface in terms of watts per square meter (W/m^2^) [@haas_assessment_2011]. Wave data is based on a 51-month Wavewatch III hindcast database developed by the National Oceanographic and Atmospheric Administration’s (NOAA’s) National Centers for Environmental Prediction for estimation of wave power density in terms of kilowatts per meter (kW/m) [@Jacobson_Hagerman_Scott_2011]. Wind data is for average offshore wind speed in meters per second (m/s) at a 90 m hub height ^[Wind data for 90-meter offshore: http://www.nrel.gov/gis/data_wind.html].
+
+TODO:
+- digest report: DOI (2014) Offshore Wind Submarine Cable Spacing Guidance
+- wind: <= 1,000 m [@musial_2016_2016; @schwartz_assessment_2010]
+- tidal: <= 100 m [@haas_assessment_2011]
+- wave: <=  200 m [@Jacobson_Hagerman_Scott_2011]
 
 ## Submarine Cable Avoidance Zones
 
@@ -593,77 +638,40 @@ All analytical code to generate outputs, inclulding this data driven report, are
 
 Of the original `r accounting(lns_km, digits=0)` km in the "NOAA Charted Submarine cables in the United States as of December 2012" dataset (Figure \@ref(fig:mapCableTerritories)), `r accounting(lns_d1x_km, digits=0)` km fell within the 200 nm of the US exclusive economic zone (EEZ), which was analyzed across `r length(unique(lns_d1x$territory))` territories that overlapped with the cables (Figure \@ref(fig:mapCableBuffers)). The cable buffer area ranged from `r hi = usa_dx %>% arrange(desc(cable3_pct)) %>% head(1); hi$cable3_pct %>% percent()` (`r hi$cable3_km2 %>% accounting(digits=0)` km^2^ [3z] of `r hi$area_km2 %>% accounting(digits=0)` km^2^ total) in the `r hi$territory` owing to many cables present and the steep continental shelf, to virtually nill `r lo = usa_dx %>% arrange(cable3_pct) %>% head(1); lo$cable2_pct %>% percent()` (`r lo$cable2_km2 %>% accounting(digits=0)` km^2^ [2z] of `r lo$area_km2 %>% accounting(digits=0)` km^2^ total) in `r lo$territory` (Table 2).
 
-```{r mapCableBuffers, fig.cap='Map of submarine cable buffers within the exclusive economic zone (EEZ; 200 nm) of United States territories. In order to see the area covered by the buffers, please visit the Detailed Maps section.'}
-fig = 'figs/mapCableBuffers'
-fig_ext = sprintf('%s.%s', fig, fig_type) # redo=T
-if (!file.exists(fig_ext) | redo){
-
-  cables = read_sf(lns_rgn_geo) %>%                      # cables
-    mutate(
-      geometry = (geometry + c(360,90)) %% c(360) - c(0,90)) %>%
-    st_set_crs(crs_gcs_w)
-  cables2 = read_sf(dx2_geo)
-  cables3 = read_sf(dx3_geo)
-  eez    = read_sf(usa_rgn_s_geo) %>%                # eez territories
-    arrange(territory) %>%
-    mutate(
-      id        = row_number(),
-      territory = factor(territory, territory, label=sprintf('%d.%s', id, territory)),
-      pt_geom   = st_centroid(geometry),
-      x         = sapply(pt_geom, "[[", 1),
-      y         = sapply(pt_geom, "[[", 2))
-  land   = st_as_sf(map('world2', plot=F, fill=T))   # land
-  
-  bb = st_bbox(cables)
-  col_n  = length(eez$territory)
-  col_pal = colorRampPalette(brewer.pal(11,'Spectral'))(col_n)
-  
-  p = ggplot(eez) +
-    #geom_sf(aes(color=territory), fill=NA, alpha=0.4) +
-    geom_sf(aes(color=territory), size=0.3, fill=NA) +
-    #scale_fill_manual('US Territory', values = col_pal) +
-    scale_color_manual('US Territory', values = alpha(col_pal, 0.8)) +
-    geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
-    geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
-    geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
-    geom_sf(data=wrld2, fill='gray60', color='gray80') +
-    #geom_text(data=eez, aes(x,y,label=id), color='black') +
-    coord_sf(
-      xlim=bb[c('xmin','xmax')], 
-      ylim=bb[c('ymin','ymax')]) +
-    theme(
-      legend.background = element_rect(fill='grey90'),  
-      legend.key = element_blank(),
-      axis.title.x=element_blank(),
-      axis.title.y=element_blank())
-
-  if (fig_type=='pdf'){
-    pdf(fig_ext, width=6.5, height=5)
-  }  else {
-    png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
-  }
-  print(p)
-  dev.off()
-  #system(sprintf('open %s', fig))
-}
-knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
-```
-
 ```{r tbl02CableBufferTerritories}
-caption  = 'Table 2: Overlap of Cable Buffers with US Territories.'
+caption  = "Table 2: Overlap of cable seperation schemes for new facilities (2 * depth) and new cables (3 * depth) with area of territory as absolute area (km2) or as a percentage (%) of territory area. Horizontal bars indicate value relative to rest of column. Territories having submarine cables but no energy resource characterization (tidal, wind or wave) are lumped into \"Other\" territories: Guam, Johnston Atoll, N Mariana Islands, Palmyra Atoll, Wake Island."
 
-ter_tbl = usa_eez
-st_geometry(ter_tbl) = NULL # drop geometry column
+ter_other = read_lines(ter_other_txt)
+
+ter_tbl = usa_eez %>%
+  st_set_geometry(NULL)
 
 tbl = ter_tbl %>%
   left_join(
     dx2 %>% 
+      st_set_geometry(NULL) %>%
       rename(cable2_km2 = area_km2),
-    by='territory')%>%
+    by='territory') %>%
   left_join(
     dx3 %>% 
+      st_set_geometry(NULL) %>% 
       rename(cable3_km2 = area_km2),
-    by='territory') %>%
+    by='territory')
+
+tbl = tbl %>%
+  arrange(territory) %>%
+  filter(
+    !territory %in% ter_other) %>%
+  bind_rows(
+    bind_cols(
+      territory = 'Other',
+      tbl %>%
+        filter(
+          territory %in% ter_other) %>%
+        summarize(
+          area_km2 = sum(area_km2),
+          cable2_km2 = sum(cable2_km2),
+          cable3_km2 = sum(cable3_km2)))) %>%
   mutate(
     cable2_pct = cable2_km2 / area_km2,
     cable3_pct = cable3_km2 / area_km2) %>%
@@ -676,11 +684,12 @@ hdr = withTags(table(
   class = 'display',
   thead(
     tr(
-      th(rowspan=2, 'Territory'),
-      th(HTML('Area (km<sup>2</sup>)')),
-      th(colspan=2, 'Min. Cable (2z)'),
-      th(colspan=2, 'Rec. Cable (3z)')),
+      th(colspan=2, 'Territory'),
+      th(colspan=2, 'Facilities (2z)'),
+      th(colspan=2, 'Cables (3z)')),
     tr(
+      th('Name'),
+      th(HTML('Area (km<sup>2</sup>)')),
       th(HTML('Area (km<sup>2</sup>)')),
       th('(%)'),
       th(HTML('Area (km<sup>2</sup>)')),
@@ -697,7 +706,9 @@ tbl %>%
     list(
       area_km2   = color_bar('lightgray'),
       cable2_km2 = color_bar('lightpink'),
-      cable3_km2 = color_bar('lightgreen'))) %>%
+      cable2_pct = color_bar('lightpink'),
+      cable3_km2 = color_bar('lightgreen'),
+      cable3_pct = color_bar('lightgreen'))) %>%
   as.datatable(
     rownames=F, container=hdr, caption=caption,
     options = list(
@@ -732,19 +743,24 @@ Generally the highest proportion of energy is in the lower classes least likely 
 
 cable_ord = c('min_2d'='Min.(2z)', 'rec_3d'='+Rec.(3z)', 'rem'='Free')
   
+#View(tbl_form_cbls)
 tbl_form_cbls = map2(
   c(wind_depth_cbls_csv, wave_depth_cbls_csv, tide_depth_cbls_csv), 
   c('wind','wave','tide'), 
   read_cbls) %>%
   bind_rows() %>%
+  mutate(
+    depth  = ifelse(is.na(depth), depth_factor, depth),
+    energy = ifelse(is.na(energy), energy_factor, energy)) %>%
+  select(-depth_factor, -energy_factor) %>%
   filter(
     territory == 'ALL',
-    depth_factor != '<0') %>%
+    depth != '<0') %>%
   #select(-territory) %>%
   mutate(
-    depth  = factor(depth_factor, depth_labels, ordered=T),
+    depth  = factor(depth, depth_labels, ordered=T),
     energy = factor(
-      sprintf('%s %s', energy_factor, c(tide='W/m^2',wave='kW/m',wind='m/s')[form]),
+      sprintf('%s %s', energy, c(tide='W/m^2',wave='kW/m',wind='m/s')[form]),
       c(
         sprintf('%s W/m^2', tide_labels),
         sprintf('%s kW/m', wave_labels),
@@ -755,8 +771,25 @@ tbl_form_cbls = map2(
 
 write_csv(tbl_form_cbls, '../data/energy-depth-cables_all.csv')
 
+# View(tbl_form_cbls %>% arrange(form, depth, energy))
 
+#paste(names(tbl_form_cbls), collapse=', ')
 d_p = tbl_form_cbls %>%
+  filter(
+    # summarize by depths relevant to energy
+    !(form=='tide' & depth %in% c('0-100')),
+    !(form=='wave' & depth %in% c('0-100','100-200')),
+    !(form=='wind' & depth %in% c('0-100','100-200','200-1,000')),
+    # remove lowest classes
+    !(form=='tide' & energy == '0-500 W/m^2'),
+    !(form=='wave' & energy == '0-10 kW/m'),
+    !(form=='wind' & energy == '<=7 m/s')) %>%
+  group_by(form, energy) %>%
+  summarize(
+    area_km2 = sum(area_km2),
+    cable2_km2 = sum(cable2_km2),
+    cable3_km2 = sum(cable3_km2)) %>%
+  ungroup() %>%
   mutate(
     min_2d = cable2_km2,
     rec_3d = cable3_km2 - cable2_km2,
@@ -776,14 +809,35 @@ txt_adj = tbl_form_cbls %>%
   .$txt_adj
 
 p = ggplot(
-  data=d_p,
+  data=d_p %>% filter(form %in% c('wave','wind')),
   aes(x = energy, y = km2/1000, fill=factor(type))) +
   #scale_fill_brewer(palette = 'Spectral') +
   geom_col() +
-  geom_text(
-    data=tbl_form_cbls, 
-    aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
-    position = position_nudge(y = txt_adj), size=2) +
+  # geom_text(
+  #   data=tbl_form_cbls, 
+  #   aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
+  #   position = position_nudge(y = txt_adj), size=2) +
+  labs(
+    #title    = 'Energy by Area and Power Class per US Territory', 
+    #subtitle = 'with Cable Overlay (Minimum - Recommended %)', 
+    x='Energy', y='Area (1,000 km^2)', fill='Cable') +
+  theme(
+    legend.justification = c(1,1), 
+    legend.position      = c(1,1),
+    axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  facet_wrap(~form, scales='free_x')
+print(p)
+
+
+p = ggplot(
+  data=d_p %>% filter(form %in% c('tide')),
+  aes(x = energy, y = km2/1000, fill=factor(type))) +
+  #scale_fill_brewer(palette = 'Spectral') +
+  geom_col() +
+  # geom_text(
+  #   data=tbl_form_cbls, 
+  #   aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
+  #   position = position_nudge(y = txt_adj), size=2) +
   labs(
     #title    = 'Energy by Area and Power Class per US Territory', 
     #subtitle = 'with Cable Overlay (Minimum - Recommended %)', 

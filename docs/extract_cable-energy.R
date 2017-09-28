@@ -33,7 +33,7 @@ if (!file.exists(tide_cbls_csv) | redo){
   # NOTE: region (rgn) refers to analytical energy input area, 
   #       whereas territory (ter) is US territory from EEZ subdivisions
   #redo = T
-  if (!file.exists(tide_csv) | redo | T){  # TODO / DEBUG: remove | T
+  if (!file.exists(tide_csv) | redo){
     
     process_tide_pts = function(rgn){ # rgn='East' # rgn='West'
       
@@ -110,8 +110,7 @@ if (!file.exists(tide_cbls_csv) | redo){
       pts = pts %>%
         filter(!is.na(territory))
       for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1] # ter = 'Alaska'
-      #for (ter in c("Gulf of Mexico","Puerto Rico","US Virgin Islands")){ # TODO/DEBUG: rm line # ter="Puerto Rico"
-
+      
         cat(sprintf('  ter %s -- %s\n', ter, Sys.time()))
         ter_s   = str_replace_all(ter,' ','-')
         tif     = sprintf('../data/tide_ter-%s.tif', ter_s)
@@ -164,7 +163,7 @@ if (!file.exists(tide_cbls_csv) | redo){
         names(depth_ter) = 'depth' # plot(depth_ter)
         
         # cross-tabulate depth with tide energy
-        if (!file.exists(csv_d) | T){ # TODO / DEBUG: off  | T
+        if (!file.exists(csv_d)){
 
           cell_area_km2 = cellStats(s[['area_km2']],'mean')
 
@@ -221,8 +220,7 @@ if (!file.exists(tide_cbls_csv) | redo){
       
     } # end process_tide_pts = function()
     
-    #for (rgn in names(tide_shps)){ # rgn='East' # 20 min
-    for (rgn in c('East')){ # TODO / DEBUG: rm
+    for (rgn in names(tide_shps)){ # rgn='East' # 20 min
       process_tide_pts(rgn)  
     }
     
@@ -307,8 +305,14 @@ if (!file.exists(tide_cbls_csv) | redo){
         ungroup()) 
   #View(tide_cbls)
   
+  tide_cbls = tide_cbls %>%
+    rename(
+      depth_factor  = depth,
+      energy_factor = energy)
+  
   # write to csv
-  tide_cbls %>% write_csv(tide_depth_cbls_csv)
+  tide_cbls %>% 
+    write_csv(tide_depth_cbls_csv)
 }
 
 # wave: read ----

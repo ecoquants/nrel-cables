@@ -37,6 +37,7 @@ map_energy_sf = function(
   ter,
   legend_title){
   # ter = 'Hawaii'; energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
+  # ter =   'West'; energy_sf = wave_sf; legend_title = 'Wave\nenergy\n(kW/m)'; redo = T
   
   d = energy_sf %>% 
     filter(territory==ter)
@@ -77,7 +78,10 @@ map_energy_sf = function(
     addLayersControl(
       baseGroups = c('Ocean','B&W'),
       overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
-      options = layersControlOptions(collapsed=T))
+      options = layersControlOptions(collapsed=T)) %>%
+    addScaleBar('bottomleft')
+  
+  
    m
 }
 
@@ -97,6 +101,9 @@ map_tide = function(
     cut(breaks = tide_breaks, include.lowest=T)
   bb = bbox(r_a)
   
+  # project to leaflet's mercator using nearest neighbor for factor color palette
+  r_m = projectRaster(r_a, projectExtent(r_a, crs = CRS(leaflet:::epsg3857)), method='ngb')
+  
   # use cables reprojected to [-180,180]
   cables = cbls_180 %>%
     filter(territory==ter)
@@ -115,7 +122,7 @@ map_tide = function(
     addProviderTiles('Stamen.TonerLite', group = 'B&W') %>%
     addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
     addRasterImage(
-      r_a, group=legend_title,
+      r_m, project=F, group=legend_title,
       colors=pal_energy, opacity=0.7) %>%
     addPolygons(
       data = cables3, group='Min. Cable (2x)',
@@ -138,7 +145,8 @@ map_tide = function(
     addLayersControl(
       baseGroups = c('Ocean','B&W'),
       overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
-      options = layersControlOptions(collapsed=T))
+      options = layersControlOptions(collapsed=T)) %>%
+    addScaleBar('bottomleft')
    m
 }
 
