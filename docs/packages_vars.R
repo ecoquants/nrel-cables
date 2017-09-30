@@ -3,7 +3,7 @@ packages = c(
   # general data science
   'tidyverse','stringr','units',
   # dynamic document creation
-  'knitr','rmarkdown','bookdown','DT','htmltools','formattable',
+  'knitr','rmarkdown','markdown','bookdown','DT','htmltools','formattable',
   # plotting & mapping
   'RColorBrewer','viridis','scales','tidyverse/ggplot2','ropensci/plotly','maps','mapproj','wch/webshot','geojsonio','rmapshaper',#'albersusa', 'ggsn', ,'plotKML' # 
   # [mapedit](ttp://r-spatial.org/r/2017/01/30/mapedit_intro.html)
@@ -62,6 +62,15 @@ dx2_depth_geo = sprintf('../data/buf_2xdepth_incr%sm_depth-binned.geojson', d_in
 dx3_depth_geo = sprintf('../data/buf_3xdepth_incr%sm_depth-binned.geojson', d_incr)
 ter_other_txt = '../data/territories_other.txt'
 
+# depth classes
+tbl_depth_reclass = tribble(
+  ~depth_from, ~depth_to, ~depth_mid,
+       -10000,         0,     -5000,
+            0,       100,        50,
+          100,       200,       150,
+          200,      1000,       600,
+         1000,     10000,      5000)
+
 # factor labels
 depth_levels = c(-5000,      50,       150,         600,     5000)
 depth_labels = c( '<0', '0-100', '100-200', '200-1,000', '>1,000')
@@ -69,6 +78,7 @@ tide_breaks = c(0,500,1000,1500,10753)
 tide_labels = c('0-500','500-1,000','1,000-1,500','>1,500')
 wind_labels = c('<=7', '7-8', '8-9', '9-10', '10-11', '11-12')
 wave_labels = c('0-10','10-20','20-30','>30')
+cable_ord   = c('min_2d'='Facilities (2z)', 'rec_3d'='Cables (3z)', 'rem'='Free')
 
 # extract_cable-energy.R paths ----
 # wind
@@ -102,5 +112,20 @@ tide_shps    = list(
   East = '/Volumes/Best HD/nrel_data_big/nrel.gov/tide/tide_data_east/tide_data_east.shp')
 tide_res_dd   = 0.005 # tide raster resolution in decimal degrees
 tide_csv      = '../data/tide.csv'
-tide_cbls_csv = '../data/tide_cables.csv'
+#tide_cbls_csv = '../data/tide_cables.csv'
 tide_depth_cbls_csv = '../data/tide_depth_cables.csv'
+
+
+plot_energy_params = list(
+  tide = list(
+    energy_labels = tide_labels,
+    depth_ranges  = c('0-100'),
+    xlab          = "paste('Tidal power (', W/m^2,')')"),
+  wave = list(
+    energy_labels = wave_labels,
+    depth_ranges  = c('0-100','100-200'),
+    xlab          = "paste('Wave energy (', kW/m,')')"),
+  wind = list(
+    energy_labels = wind_labels,
+    depth_ranges  = c('0-100','100-200','200-1,000'),
+    xlab          = "paste('Wind speed (', m/s,')')"))

@@ -14,17 +14,9 @@ cbl3_sp = cbl3_sf %>% as('Spatial')
 usa_rgn_s = read_sf(usa_rgn_s_geo)
 usa_rgn = read_sf(usa_rgn_geo)
 
-# depth classes
-tbl_depth_reclass = tribble(
-  ~depth_from, ~depth_to, ~depth_mid,
-  -10000,         0,     -5000,
-       0,       100,        50,
-     100,       200,       150,
-     200,      1000,       600,
-    1000,     10000,      5000)
-
 # tide ----
-if (!file.exists(tide_cbls_csv) | redo){ 
+if (!file.exists(tide_depth_cbls_csv) | redo){ 
+#if (T){  # TODO: DEBUG off
   
   # projection of original tide data: `st_crs(tide_east)$proj4string`
   crs_tide = '+proj=longlat +datum=NAD83 +no_defs'
@@ -33,287 +25,242 @@ if (!file.exists(tide_cbls_csv) | redo){
   # NOTE: region (rgn) refers to analytical energy input area, 
   #       whereas territory (ter) is US territory from EEZ subdivisions
   #redo = T
-  if (!file.exists(tide_csv) | redo){
     
-    process_tide_pts = function(rgn){ # rgn='East' # rgn='West'
+  process_rgn_pts = function(rgn){ # rgn='East' # rgn='West'
+    #process_tide_pts = function(rgn){ # rgn='East' # rgn='West'
+    # TODO: East after West fix (and focus on US Virgin Islands cable3_pct: 8.846567032 )
+    
+    cat(sprintf('rgn %s -- %s\n', rgn, Sys.time()))
+    csv_rgn_pts = sprintf('../data/tide_rgn-%s_pts.csv', rgn)
+    geo_rgn_pts = sprintf('../data/tide_rgn-%s_pts.geojson', rgn)
+    
+    if (!file.exists(csv_rgn_pts) | redo){
       
-      cat(sprintf('rgn %s -- %s\n', rgn, Sys.time()))
-      csv_rgn_pts = sprintf('../data/tide_rgn-%s_pts.csv', rgn)
-      geo_rgn_pts = sprintf('../data/tide_rgn-%s_pts.geojson', rgn)
+      # read in points, project to wrap around dateline
+      pts = read_sf(tide_shps[[rgn]]) %>%
+        as('Spatial') %>% 
+        spTransform(crs_gcs_w) %>% 
+        st_as_sf() %>%
+        select(lon=LONGIT, lat=LATITU, pwr_wm2=MEANPO)
       
-      if (!file.exists(csv_rgn_pts) | redo){
+      # get bounding box for limiting USA territories
+      cat(sprintf('  bbox -- %s\n', Sys.time()))
+      b = st_bbox(pts)
+      bb = st_polygon(list(matrix(c(
+        b['xmin'], b['ymin'],
+        b['xmin'], b['ymax'],
+        b['xmax'], b['ymax'],
+        b['xmax'], b['ymin'],
+        b['xmin'], b['ymin']), ncol=2, byrow=T)))
+      bb_sf = st_cast(st_sf(a = 1, geometry=st_sfc(bb))) %>%
+        st_set_crs(crs_gcs)
+      
+      # limit simplified US territories to those intersecting pts bounding box
+      usa_pts = usa_rgn_s %>%
+        filter(st_intersects(usa_rgn_s, bb_sf, sparse=F)[,1]) %>%
+        select(territory) # plot(bb_sf); plot(usa_rgn_s, add=T)
+      
+      # spatial join on simplified US territories: intersect and join territory column
+      cat(sprintf('  st_join simple -- %s\n', Sys.time()))
+      pts = st_join(pts, usa_pts, prepared=T) # 2.1 min for East
+      
+      # get points without a territory assigned
+      pts_na = pts %>%
+        filter(is.na(territory)) %>%
+        select(-territory)
+      
+      # spatial join on high res US territories for pts without territory
+      cat(sprintf('  st_join hi-res -- %s\n', Sys.time()))
+      usa_pts = usa_rgn %>%
+        filter(territory %in% unique(usa_pts$territory)) %>%
+        select(territory)
+      pts_na = st_join(pts_na, usa_pts, prepared=T) # 2 min on 87,025 East NAs
+      
+      # combine pts and pts_na
+      cat(sprintf('  rbind -- %s\n', Sys.time()))
+      pts = rbind(
+        pts %>%
+          filter(!is.na(territory)),
+        pts_na) %>%
+        mutate(
+          region=rgn)
+      
+      # write to csv
+      pts %>% 
+        as_tibble() %>%
+        write_csv(csv_rgn_pts)
+      write_sf(pts, geo_rgn_pts, delete_dsn=T)
+      
+    } # end if (!file.exists(csv_rgn_pts)...
+  } # end process_rgn_pts = function(rgn){
+    
+  # iterate over regions 
+  for (rgn in names(tide_shps)){ # rgn = 'East'
+    csv_rgn_pts = sprintf('../data/tide_rgn-%s_pts.csv', rgn)
+      
+    # create rgn points csv if needed
+    process_rgn_pts(rgn)
+
+    # get points
+    pts = read_csv(csv_rgn_pts) %>%
+      mutate(
+        longitude = ifelse(lon < 0, lon + 180, lon),
+        latitude  = lat) %>%
+      st_as_sf(coords = c('longitude','latitude'), agr='constant', crs=crs_gcs_w)
+
+    # rasterize by territory
+    pts = pts %>%
+      filter(!is.na(territory))
+    for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1] # ter = 'US Virgin Islands'
+    
+      cat(sprintf('  ter %s -- %s\n', ter, Sys.time()))
+      ter_s     = str_replace_all(ter,' ','-')
+      tif       = sprintf('../data/tide_ter-%s.tif', ter_s)
+      #csv_r     = sprintf('../data/tide_ter-%s_tif.csv', ter_s)
+      #csv_c     = sprintf('../data/tide_ter-%s_tif-cable.csv', ter_s)
+      #csv_d     = sprintf('../data/tide_ter-%s_tif-depth.csv', ter_s)
+      csv_d_c = sprintf('../data/tide_ter-%s_tif-depth-cable.csv', ter_s)
+      #geo       = sprintf('../data/tide_ter-%s_pts.geojson', ter_s)
+      depth_grd = sprintf('../data/depth_%s.grd', str_replace(ter, ' ', '_'))
+
+      # rasterize
+      if (!file.exists(tif) | redo){
+        cat(sprintf('    rasterize -- %s\n', Sys.time()))
         
-        # read in points, project to wrap around dateline
-        pts = read_sf(tide_shps[[rgn]]) %>%
-          as('Spatial') %>% 
-          spTransform(crs_gcs_w) %>% 
-          st_as_sf() %>%
-          select(lon=LONGIT, lat=LATITU, pwr_wm2=MEANPO)
-      
-        # get bounding box for limiting USA territories
-        cat(sprintf('  bbox -- %s\n', Sys.time()))
-        b = st_bbox(pts)
-        bb = st_polygon(list(matrix(c(
-          b['xmin'], b['ymin'],
-          b['xmin'], b['ymax'],
-          b['xmax'], b['ymax'],
-          b['xmax'], b['ymin'],
-          b['xmin'], b['ymin']), ncol=2, byrow=T)))
-  
-        # limit simplified US territories to those intersecting pts bounding box
-        usa_pts = usa_rgn_s %>%
-          filter(st_intersects(geometry, bb, sparse=F)) %>%
-          select(territory)
-  
-        # spatial join on simplified US territories: intersect and join territory column
-        cat(sprintf('  st_join simple -- %s\n', Sys.time()))
-        pts = st_join(pts, usa_pts, prepared=T) # 2.1 min for East
-        
-        # get points without a territory assigned
-        pts_na = pts %>%
-          filter(is.na(territory)) %>%
-          select(-territory)
-      
-        # spatial join on high res US territories for pts without territory
-        cat(sprintf('  st_join hi-res -- %s\n', Sys.time()))
-        usa_pts = usa_rgn %>%
-          filter(territory %in% unique(usa_pts$territory)) %>%
-          select(territory)
-        pts_na = st_join(pts_na, usa_pts, prepared=T) # 2 min on 87,025 East NAs
-      
-        # combine pts and pts_na
-        cat(sprintf('  rbind -- %s\n', Sys.time()))
-        pts = rbind(
-          pts %>%
-            filter(!is.na(territory)),
-          pts_na) %>%
-          mutate(
-            region=rgn)
-        
-        # write to csv
-        pts %>% 
-          as_tibble() %>%
-          write_csv(csv_rgn_pts)
-        write_sf(pts, geo_rgn_pts, delete_dsn=T)
-        
-      } else {
-        
-        pts = read_csv(csv_rgn_pts) %>%
-          mutate(
-            longitude = ifelse(lon < 0, lon + 180, lon),
-            latitude  = lat) %>%
-          st_as_sf(coords = c('longitude','latitude'), agr='constant', crs=crs_gcs_w)
-        
-      } # end if (!file.exists(csv_rgn_pts)...
-      
-      # rasterize by territory
-      pts = pts %>%
-        filter(!is.na(territory))
-      for (ter in unique(pts$territory)){ # ter = unique(pts$territory)[1] # ter = 'Alaska'
-      
-        cat(sprintf('  ter %s -- %s\n', ter, Sys.time()))
-        ter_s   = str_replace_all(ter,' ','-')
-        tif     = sprintf('../data/tide_ter-%s.tif', ter_s)
-        csv_r   = sprintf('../data/tide_ter-%s_tif.csv', ter_s)
-        csv_c   = sprintf('../data/tide_ter-%s_tif-cable.csv', ter_s)
-        csv_d   = sprintf('../data/tide_ter-%s_tif-depth.csv', ter_s)
-        #csv_d_c = sprintf('../data/tide_ter-%s_tif-depth-cable.csv', ter_s)
-        geo     = sprintf('../data/tide_ter-%s_pts.geojson', ter)
-      
         p = pts %>%
           filter(territory==ter) %>% 
           as('Spatial')
         #write_sf(pts %>% filter(territory==ter), geo, delete_dsn=T)
         
-        # rasterize
-        if (!file.exists(tif) | redo){
-          cat(sprintf('    rasterize -- %s\n', Sys.time()))
-          r = rasterize(
-            p,
-            raster(crs=crs_gcs_w, ext=extent(p), resolution=tide_res_dd),
-            field='pwr_wm2', fun=mean, na.rm=T) # 9.6 sec for East 0.005 res
-          
-          # write raster
-          writeRaster(r, tif, overwrite=T)
-        } else {
-          r = raster(tif)
-        }
-        # stack with area
-        s = stack(r, area(r))
-        names(s) = c('pwr_wm2', 'area_km2') # plot(r)
+        r = rasterize(
+          p,
+          raster(crs=crs_gcs_w, ext=extent(p), resolution=tide_res_dd),
+          field='pwr_wm2', fun=mean, na.rm=T) # 9.6 sec for East 0.005 res
         
-        # get values for whole raster
-        if (!file.exists(csv_r) | redo){
-          cat(sprintf('    getValues -- %s\n', Sys.time()))
-          v_r = getValues(s) %>% as_tibble() %>%
-            filter(!is.na(pwr_wm2)) %>%
-            mutate(
-              territory = ter)
-          write_csv(v_r, csv_r)
-        } else {
-          v_r = read_csv(csv_r)
-        }
-        
-        # depth aligned to r
-        depth_ter_grd = sprintf('../data/depth_%s.grd', str_replace(ter, ' ', '_'))
-        depth_ter = raster(depth_ter_grd)
-        depth_ter = resample(depth_ter, r, method='ngb') %>%
-          crop(r) %>%
-          mask(r)
-        names(depth_ter) = 'depth' # plot(depth_ter)
-        
-        # cross-tabulate depth with tide energy
-        if (!file.exists(csv_d)){
-
-          cell_area_km2 = cellStats(s[['area_km2']],'mean')
-
-          r_r = raster::cut(r, breaks=tide_breaks)
-          names(r_r) = 'energy'
-          # plot(r_r)
-          
-          x = crosstab(depth_ter, r_r)
-          names(x) = c('depth','energy','n')
-          
-          tbl_tide_depth = x %>% # error for East: object 'depth' not found
-            as_tibble() %>%
-            mutate(
-              territory = ter,
-              depth_factor = factor(
-                depth %>% as.character(),
-                levels=depth_levels,
-                labels=depth_labels),
-              energy_factor = factor(
-                energy %>% as.numeric(),
-                levels=1:length(tide_labels),
-                labels=tide_labels),
-              area_km2 = n * cell_area_km2) %>%
-            select(territory, depth_factor, energy_factor, area_km2) %>%
-            filter(
-              !is.na(depth_factor),
-              !is.na(energy_factor),
-              area_km2 > 0) # View(tbl_tide_depth)
-          
-          write_csv(tbl_tide_depth, csv_d)
-        }
-
-        s = stack(s, depth_ter)
-        names(s)[length(names(s))] = 'depth'
-        
-        # extract values of cable overlapping raster
-        cat(sprintf('    extract -- %s\n', Sys.time()))
-        v_c = bind_rows(
-          extract(s, 
-                  cbl2_sp %>% subset(territory==ter), df=T) %>%
-            mutate(
-              cable = 'cable2'),
-          extract(s, 
-                  cbl3_sp %>% subset(territory==ter), df=T) %>%
-            mutate(
-              cable = 'cable3')) %>%
-          as_tibble() %>%
-          filter(!is.na(pwr_wm2)) %>%
-          mutate(
-            territory = ter)
-        cat(sprintf('    write csv_c -- %s\n', Sys.time()))
-        write_csv(v_c, csv_c) # v_c0 = read_csv(csv_c)
-      } # end for (ter in...)
+        # write raster
+        writeRaster(r, tif, overwrite=T)
+      } else {
+        r = raster(tif)
+      }
       
-    } # end process_tide_pts = function()
-    
-    for (rgn in names(tide_shps)){ # rgn='East' # 20 min
-      process_tide_pts(rgn)  
-    }
-    
-  } # end if (!file.exists(tide_tif))
+      # depth, projected to tide res
+      depth_r = resample(raster(depth_grd), r, method='ngb')
+      #plot(depth_r); plot(r, add=T)
 
-  # tide: summarize by territory, depth & energy
-
+      ter_r = rasterize(
+        usa_rgn %>%
+          filter(territory==ter) %>% # plot()
+          as('Spatial'), 
+        r, 
+        1)
+      
+      cbl2_r = rasterize(
+        cbl2_sf %>%
+          filter(territory==ter) %>% 
+          as('Spatial'), 
+        r, 
+        1) # plot(r_cbl2)
+      
+      cbl3_r = rasterize(
+        cbl3_sf %>%
+          filter(territory==ter) %>% 
+          as('Spatial'), 
+        r, 
+        1) # plot(r_cbl3)
+      
+      # convert from tide continuous to breaks
+      # plot(r)
+      tide_r = raster::cut(r, breaks=tide_breaks, include.lowest=T)
+      #plot(tide_r); table(getValues(tide_r))
+      
+      # stack with area
+      s_tide = stack(tide_r, depth_r, ter_r, cbl2_r, cbl3_r, area(r))
+      names(s_tide) = c('tide','depth','ter1','cbl2','cbl3','cell_km2') # plot(s_tide)
+      
+      # apply mask
+      r_mask = !is.na(tide_r) & !is.na(depth_r) & depth_r > 0 & !is.na(ter_r)
+      s_tide = mask(s_tide, r_mask, maskvalue=0) # plot(s_tide)
+      
+      # summarize area of ter by depth, energy
+      d_tide = getValues(s_tide) %>% 
+        as_tibble() %>%
+        filter(!is.na(depth)) %>%
+        mutate(
+          depth_factor = factor(
+            x      = depth,
+            levels = depth_levels,
+            labels = depth_labels,
+            ordered = T),
+          energy_factor = factor(
+            x      = tide,
+            levels = seq(1, length(tide_labels)),
+            labels = tide_labels,
+            ordered = T)) %>%
+        group_by(depth_factor, energy_factor) %>%
+        summarize(
+          area_km2   = sum(ter1*cell_km2, na.rm=T),
+          cable2_km2 = sum(cbl2*cell_km2, na.rm=T),
+          cable3_km2 = sum(cbl3*cell_km2, na.rm=T)) %>%
+        mutate(
+          cable2_pct = cable2_km2 / area_km2,
+          cable3_pct = cable3_km2 / area_km2) %>%
+        mutate(
+          territory=ter) %>%
+        select(
+          territory, depth_factor, energy_factor,
+          area_km2, cable2_km2, cable3_km2, cable2_pct, cable3_pct)
+      #View(d_tide)
+      
+      write_csv(d_tide, csv_d_c)
+    } # end for (ter in unique(pts$territory)){
+  } # end for (rgn in names(tide_shps)){ 
+  
   # summarize for all energy
-  f_v = list.files('../data', 'tide_ter-.*_tif-depth\\.csv$', full.names=T)
-  d_v = bind_rows(lapply(f_v, read_csv))
-  d_v = d_v %>%
-     mutate(
-       energy = factor(
-         x      = energy_factor,
-         levels = tide_labels,
-         labels = tide_labels,
-         ordered=T),
-       depth = factor(
-         x      = depth_factor,
-         levels = depth_labels,
-         labels = depth_labels,
-         ordered=T)) %>%
-    select(territory, depth, energy, area_km2) %>%
-    arrange(territory, depth, energy)
-  #View(d_v)
-  #   group_by(territory, depth, energy_cat) %>%
-  #   summarize(
-  #     area_km2 = sum(area_km2))
-  
-  # summarize for overlap with cables
-  f_c = list.files('../data', 'tide_ter-.*_tif-cable\\.csv$', full.names=T)
-  d_c = bind_rows(lapply(f_c, read_csv)) %>%
+  csvs = list.files('../data', 'tide_ter-.*_tif-depth-cable\\.csv$', full.names=T)
+  tide_depth_cbls = bind_rows(lapply(csvs, read_csv)) %>%
     mutate(
-      depth = factor(
-        x      = depth,
-        levels = depth_levels,
+      depth_factor = factor(
+        x      = depth_factor,
+        levels = depth_labels,
         labels = depth_labels,
-        ordered=T),
-      energy = cut(
-        x      = pwr_wm2, 
-        breaks = tide_breaks, 
-        labels = tide_labels, 
-        ordered_result = T, include.lowest=T)) %>%
-    group_by(territory, depth, energy, cable) %>%
-    summarize(
-      area_km2 = sum(area_km2)) %>%
-    ungroup() %>%
-    spread(cable, area_km2) %>%
-    rename(
-      cable2_km2 = cable2,
-      cable3_km2 = cable3)
-  
-  # tide: summmarize ----
-  tide_cbls = d_v %>%
-    left_join(
-      d_c, 
-      by=c('territory','depth','energy')) %>%
-    replace_na(list(
-      cable2_km2 = 0,
-      cable3_km2 = 0)) %>%
-    mutate(
-      cable2_pct = cable2_km2 / area_km2,
-      cable3_pct = cable3_km2 / area_km2) %>%
-    select(
-      territory, depth, energy, area_km2,
-      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
-    arrange(territory, depth, energy)
+        ordered = T),
+      energy_factor = factor(
+        x      = energy_factor,
+        levels = tide_labels,
+        labels = tide_labels,
+        ordered = T))
   
   # rbind territory=ALL
-  tide_cbls = tide_cbls %>%
+  tide_depth_cbls = tide_depth_cbls %>%
     bind_rows(
-      tide_cbls %>%
-        group_by(depth, energy) %>%
+      tide_depth_cbls %>%
+        group_by(depth_factor, energy_factor) %>%
         summarize(
           area_km2   = sum(area_km2),
           cable2_km2 = sum(cable2_km2),
           cable3_km2 = sum(cable3_km2),
           territory = 'ALL') %>%
         mutate(
-          cable2_pct     = cable2_km2 / area_km2,
-          cable3_pct     = cable3_km2 / area_km2) %>%
-        ungroup()) 
-  #View(tide_cbls)
+          cable2_pct = cable2_km2 / area_km2,
+          cable3_pct = cable3_km2 / area_km2) %>%
+        ungroup()) # View(tide_depth_cbls)
   
-  tide_cbls = tide_cbls %>%
-    rename(
-      depth_factor  = depth,
-      energy_factor = energy)
+  write_csv(tide_depth_cbls, tide_depth_cbls_csv)
   
-  # write to csv
-  tide_cbls %>% 
-    write_csv(tide_depth_cbls_csv)
-}
+} # end if (!file.exists(tide_depth_cbls_csv) | redo){ 
+  
+tide_depth_cbls = read_csv(tide_depth_cbls_csv) %>%
+  mutate(
+    depth_factor = factor(
+      x      = depth_factor,
+      levels = depth_labels,
+      labels = depth_labels,
+      ordered = T),
+    energy_factor = factor(
+      x      = energy_factor,
+      levels = tide_labels,
+      labels = tide_labels,
+      ordered = T)) # View(tide_depth_cbls)
 
 # wave: read ----
 if (!file.exists(wave_geo)){

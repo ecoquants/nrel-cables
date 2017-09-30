@@ -8,6 +8,9 @@ date: |
   | ^1^: EcoQuants, Santa Barbara, CA
   | ^2^: National Renewable Energy Lab, Golden, CO \newline
 output:
+  bookdown::word_document2:
+    toc: yes
+    toc_depth: 4
   bookdown::pdf_document2:
     keep_tex: yes
     number_sections: yes
@@ -18,9 +21,6 @@ output:
     toc: yes
     toc_depth: 4
     toc_float: yes
-  bookdown::word_document2:
-    toc: yes
-    toc_depth: 4
 lof: yes
 csl: energy-efficiency.csl
 bibliography: nrel-cables.bib
@@ -48,24 +48,20 @@ if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_k
   opts_chunk$set(echo=F)
 }
 
-fmt_tbl = function(csv, energy_hdr, caption){
+fmt_tbl = function(csv, params, energy_hdr, caption){
 
-  # read_csv(csv) %>%
-  #   mutate(
-  #    cable2_pct = cable2_pct/100, 
-  #    cable3_pct = cable3_pct/100) %>%
-  #   write_csv(csv)
+  # csv        = wave_depth_cbls_csv
+  # params     = plot_energy_params$wave
+  # energy_hdr = 'Wave Energy (kW/m)'
+  # caption    = 'Table 5: Area overlap with cables for wave energy (kW/m) by territory.'
   
-  d = read_csv(csv) %>%
-    filter(
-      territory != 'ALL',
-      !is.na(territory))
+  d = get_tbl_energy_cbls(csv, params)
   
   # correct for odd flipping from using className='dt-right'
   d = d %>%
     mutate(
-      energy_lbl = recode(
-        energy_lbl, 
+      energy = recode(
+        energy,
         `<=7`='7=>',
         `>30`='30<',
         `>1500`='1500<'))
@@ -75,10 +71,10 @@ fmt_tbl = function(csv, energy_hdr, caption){
     thead(
       tr(
         th(rowspan=2, 'Territory'),
-        th(rowspan=2, energy_hdr),
+        th(rowspan=2, HTML(energy_hdr)),
         th(rowspan=2, HTML('Area (km<sup>2</sup>)')),
-        th(colspan=2, 'Min. Cable (2z)'),
-        th(colspan=2, 'Rec. Cable (3z)')),
+        th(colspan=2, 'Facilities (2z)'),
+        th(colspan=2, 'Cable (3z)')),
       tr(
         th(HTML('Area (km<sup>2</sup>)')),
         th('(%)'),
@@ -88,7 +84,6 @@ fmt_tbl = function(csv, energy_hdr, caption){
   d %>%
     mutate(
       territory  = ifelse(duplicated(territory), '', territory),
-      energy     = factor(energy_num, unique(energy_num), unique(energy_lbl)),
       area_km2   = accounting(area_km2, digits=0),
       cable2_km2 = accounting(cable2_km2, digits=0),
       cable3_km2 = accounting(cable3_km2, digits=0),
@@ -111,25 +106,50 @@ fmt_tbl = function(csv, energy_hdr, caption){
         columnDefs = list(list(className='dt-right', targets=1:5))))
 }
 
-plot_cbls = function(
-  csv   = wave_cbls_csv, 
-  #title = 'Wave Energy by Area and Power Class per US Territory',
-  xlab  = 'Wave energy (kW/m)',
-  legend_position      = c(1,0),
-  legend_justification = c(1,0)){ 
+get_tbl_energy_cbls = function(csv, params){
   
-  energy_cbls = read_csv(csv) %>%
+  d = read_csv(csv) %>%
     filter(
       !is.na(territory),
-      territory != 'ALL') %>%
+      territory != 'ALL',
+      depth_factor %in% params$depth_ranges,
+      energy_factor != params$energy_labels[1]) %>%
+    # summarize across depths
+    group_by(territory, energy_factor) %>%
+    summarize(
+      area_km2 = sum(area_km2),
+      cable2_km2 = sum(cable2_km2),
+      cable3_km2 = sum(cable3_km2)) %>% 
     mutate(
-      energy = factor(energy_lbl, unique(energy_lbl), ordered=T),
-      pct_lbl = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100))
+      cable2_pct = cable2_km2 / area_km2,
+      cable3_pct = cable3_km2 / area_km2,
+      energy     = factor(energy_factor, params$energy_labels, ordered=T),
+      pct_lbl    = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100)) %>%
+    ungroup() %>%
+    arrange(territory, energy) %>%
+    select(territory, energy, area_km2, cable2_km2, cable3_km2, cable2_pct, cable3_pct, pct_lbl)
   
-  #cable_ord = c('min_2d'='Minimum (2*depth)', 'rec_3d'='+Recommended (3*depth)', 'rem'='Available')
-  cable_ord = c('min_2d'='Min.(2z)', 'rec_3d'='+Rec.(3z)', 'rem'='Free')
+  d
+}
+
+plot_cbls = function(
+  csv           = tide_depth_cbls_csv,
+  params        = plot_energy_params$tidal,
+  legend_position      = c(1,1),
+  legend_justification = c(1,1)){ 
+
+  # csv    = wave_depth_cbls_csv
+  # params = plot_energy_params$wave
+  # legend_position      = c(1,0.3)
+  # legend_justification = c(1,1)
   
-  d_p = energy_cbls %>%
+  d = get_tbl_energy_cbls(csv, params)
+
+  d_lbl = d %>%
+    mutate(
+      type = NA)
+  
+  d_p = d %>%
     mutate(
       min_2d = cable2_km2,
       rec_3d = cable3_km2 - cable2_km2,
@@ -141,30 +161,25 @@ plot_cbls = function(
       type = factor(
         type,
         names(cable_ord),
-       cable_ord, ordered=T)) %>%
+        cable_ord, ordered=T)) %>%
     arrange(territory, energy, type)
-  
-  txt_adj = energy_cbls %>% 
-    summarize(txt_adj = max(area_km2)/1000*0.025) %>% 
-    .$txt_adj
   
   p = ggplot(
       data=d_p,
       aes(x = energy, y = km2/1000, fill=type)) +
     geom_col() +
     geom_text(
-      data=energy_cbls, 
-      aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
-      position = position_nudge(y = txt_adj), size=2) +
+      data=d_lbl,
+      aes(x = energy, y = area_km2/1000, label=pct_lbl), vjust=-0.5, size=2.5) +
     labs(
-      #title=title, 
-      #subtitle='with Cable Overlay (Minimum - Recommended %)', 
-      x=xlab, y='Area (1,000 km^2)', fill='Cable') +
+      x = parse(text=params$xlab), 
+      y = expression(paste('Area (1,000 ', km^2,')')), fill='Overlap') +
     theme(
       legend.justification = legend_justification, 
       legend.position      = legend_position,
-      axis.text.x = element_text(angle = 90, hjust = 1)) + 
-    facet_wrap(~territory) # facet_wrap(~territory, scales='free_y') # facet_grid(. ~ territory)
+      axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    expand_limits(y = expand_range(c(0, max(d$area_km2/1000)), mul=0.1)[2]) + 
+    facet_wrap(~territory) 
   print(p)
 }
 
@@ -229,184 +244,129 @@ map_cable = function(
 map_energy_sf = function(
   energy_sf,
   ter,
-  legend_title,
-  redo,
-  fig){
-  # ter = 'Hawaii'; fig = sprintf('figs/mapWind_%s', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = 'Wind\nspeed\n(m/s)'; redo = T
+  legend_title){
+  # ter = 'Hawaii'; energy_sf = wind_sf; legend_title = 'Wind<br>power (m/s)'; redo = T
+  # ter =   'West'; energy_sf = wave_sf; legend_title = 'Wave\nenergy\n(kW/m)'; redo = T
   
-  # TODO: fig_type # fig='htmlwidget'
-  fig_ext = sprintf('%s.%s', fig, fig_type)
-  #browser()
-  if (!file.exists(fig_ext) | redo | fig=='htmlwidget'){
-    
-    d = energy_sf %>% 
-      filter(territory==ter)
-    eez = usa_eez %>%
-      filter(territory==ter)
-    cables = lns_d1x %>%
-      filter(territory==ter)
-    cables2 = dx2 %>%
-      filter(territory==ter)
-    cables3 = dx3 %>%
-      filter(territory==ter)
-    
-    bb = st_bbox(d)
-    # TODO: st_cast(x=st_bbox, to=st_polygon)                 
-    bb_ply = st_sf(
-      tibble(
-        territory = ter,
-        geom = st_sfc(st_polygon(list(rbind(
-          c(bb['xmin'], bb['ymin']),
-          c(bb['xmax'], bb['ymin']),
-          c(bb['xmax'], bb['ymax']),
-          c(bb['xmin'], bb['ymax']),
-          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
-    earth = land %>%
-      filter(
-        st_intersects(land, bb_ply, sparse=F)[,1]) # plot(earth)
+  d = energy_sf %>% 
+    filter(territory==ter)
+  cables = lns_d1x %>%
+    filter(territory==ter)
+  cables2 = cbls2 %>%
+    filter(territory==ter)
+  cables3 = cbls3  %>%
+    filter(territory==ter)
 
-    # TODO: leaflet
-    if (fig == 'htmlwidget'){
-      pal = colorFactor('YlGnBu', d$energy, reverse=T)
+  bb = st_bbox(d)
+
+  pal_energy = colorFactor('BuGn',      d$energy)
+  pal_depth  = colorFactor('OrRd', cables3$depth, reverse=T)
   
-      m = leaflet(d) %>% 
-        addProviderTiles('Esri.OceanBasemap') %>%
-        addPolygons(
-          group=legend_title,
-          color=NA, smoothFactor = 0.5,
-          fillOpacity = 0.5,
-          fillColor = ~pal(energy)) %>% #,
-          # label = ~sprintf(
-          #   "<strong>%s</strong>: %s",
-          #   territory, energy) %>% lapply(HTML),
-          # highlightOptions = highlightOptions(
-          #   color = "white", weight = 2, bringToFront = T)) %>%
-        addPolygons(
-          data = cables2, group='Min. Cable (2x)',
-          color='red', stroke=F, fillOpacity = 0.3) %>%
-        addPolygons(
-          data = cables3, group='Rec. Cable (3x)',
-          color='red', stroke=F, fillOpacity = 0.3) %>%      
-        addPolylines(
-          data = cables, group='Cables',
-          color='red', opacity = 0.8, weight=1) %>% #,
-          # popup = ~sprintf(
-          #   "scaleBand: %s<br>description: %s<br>effectiveDate: %s<br>Territory: %s<br>Buffer (1x): %d",
-          #   scaleBand, description, effectiveDate, territory, buf1x)) %>%
-        addLegend(pal=pal, values=~energy, title=legend_title) %>%
-        addLayersControl(
-          baseGroups = c("B&W", "Ocean"),
-          overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
-          options = layersControlOptions(collapsed=T))
-    } else {
-      
-      p = ggplot(data=d) +
-        geom_sf(aes(fill=energy), color=NA) +
-        scale_fill_brewer(legend_title, palette='YlGnBu', direction=-1) +
-        geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
-        geom_sf(data=eez, fill=NA, color='gray40') +
-        geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
-        geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
-        geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
-        coord_sf(
-          xlim=bb[c('xmin','xmax')], 
-          ylim=bb[c('ymin','ymax')]) +
-        theme(
-          legend.background = element_rect(fill='grey90'),  
-          legend.key = element_blank())
-        
-      if (fig_type=='pdf'){
-        pdf(fig_ext, width=6.5, height=5)
-      }  else {
-        png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
-      }
-      print(p)
-      dev.off()
-    }
-  }
-  if (fig == 'htmlwidget') m
-  #system(sprintf('open %s', fig))
-  #knitr::include_graphics(fig, dpi=fig_dpi)
+  m = leaflet(d, 
+              options=c(leafletOptions(), attributionControl=F, zoomControl=F)) %>% 
+    addProviderTiles('Stamen.TonerLite', group = 'B&W') %>%
+    #addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
+      #, options = c(providerTileOptions(), list(attribution=''))) %>% # 
+    addPolygons(
+      group=legend_title,
+      #fillColor = ~pal_energy(energy), fillOpacity = 0.5, color=NA) %>% 
+      fillColor = ~pal_energy(energy), fillOpacity = 0.5, stroke=F) %>% 
+    addPolygons(
+      data = cables2, group='Min. Cable (2x)',
+      #fillColor=~pal_depth(depth), fillOpacity = 0.3, color=NA) %>%
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, stroke=F) %>%
+    addPolygons(
+      data = cables3, group='Rec. Cable (3x)',
+      #fillColor=~pal_depth(depth), fillOpacity = 0.3, color=NA) %>%      
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, stroke=F) %>%      
+    addPolylines(
+      data = cables, group='Cables',
+      color='black', opacity = 0.5, weight=0.4) %>% #,
+    fitBounds(bb[['xmin']],bb[['ymin']],bb[['xmax']],bb[['ymax']]) %>%
+    addLegend(
+      position='bottomright', 
+      pal=pal_energy, values=~energy, title=legend_title) %>%
+    addLegend(
+      position='bottomright', 
+      pal=pal_depth, values=cables3$depth, title='Cable<br>depth (m)') %>%
+    # addLayersControl(
+    #   baseGroups = c('Ocean','B&W'),
+    #   overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
+    #   options = layersControlOptions(collapsed=T)) %>%
+    addScaleBar('bottomleft')
+  
+  ## save html to png
+  # saveWidget(m, "test.html", selfcontained = FALSE)
+  # webshot("test.html", file = "test.png", cliprect = "viewport", delay=1)
+  # system('open test.png')
+  
+  m
 }
 
 map_tide = function(
   ter,
-  legend_title,
-  redo,
-  fig){
-  # ter = 'Alaska'; fig = sprintf('figs/mapTide_%s', str_replace_all(ter,' ','-')); legend_title = 'Tidal\npower\n(W/m2)'; redo = T
+  legend_title='Tidal<br>power (W/m<sup>2</sup>)'){
+  # ter = 'Puerto Rico'; legend_title = 'Tidal<br>power (W/m<sup>2</sup>)'
+  # ter = 'Alaska'; legend_title = 'Tidal\npower\n(W/m2)'
   
-  fig_ext = sprintf('%s.%s', fig, fig_type)
-  if (!file.exists(fig_ext) | redo){
-    
-    ter_str = str_replace_all(ter, ' ', '-')
-    tif = sprintf('../data/tide_ter-%s.tif', ter_str)
-    r = raster(tif)
+  ter_str = str_replace_all(ter, ' ', '-')
+  tif = sprintf('../data/tide_ter-%s.tif', ter_str)
+  r = raster(tif) # plot(r)
+  
+  # aggregate and adjust to [-180,180] from [0,360] for leaflet to show
+  r_a = aggregate(r, fact=8, fun=max) %>%
+    shift(-360) %>%
+    cut(breaks = tide_breaks, include.lowest=T) # plot(r_a)
+  bb = bbox(r_a)
+  
+  # project to leaflet's mercator using nearest neighbor for factor color palette
+  r_m = projectRaster(r_a, projectExtent(r_a, crs = CRS(leaflet:::epsg3857)), method='ngb')
+  
+  # use cables reprojected to [-180,180]
+  cables = cbls_180 %>%
+    filter(territory==ter)
+  cables2 = cbls2_180 %>%
+    filter(territory==ter)
+  cables3 = cbls3_180 %>%
+    filter(territory==ter)
 
-    #d = energy_sf %>% 
-    #  filter(territory==ter)
-    eez = usa_eez %>%
-      filter(territory==ter)
-    cables = lns_d1x %>%
-      filter(territory==ter)
-    cables2 = dx2 %>%
-      filter(territory==ter)
-    cables3 = dx3 %>%
-      filter(territory==ter)
-    
-    bb = bbox(r)
-    bb = c(xmin=bb[1,1], xmax=bb[1,2], ymin=bb[2,1], ymax=bb[2,2])
-    # TODO: st_cast(x=st_bbox, to=st_polygon)                 
-    bb_ply = st_sf(
-      tibble(
-        territory = ter,
-        geom = st_sfc(st_polygon(list(rbind(
-          c(bb['xmin'], bb['ymin']),
-          c(bb['xmax'], bb['ymin']),
-          c(bb['xmax'], bb['ymax']),
-          c(bb['xmin'], bb['ymax']),
-          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
-    earth = land %>%
-      filter(
-        st_intersects(land, bb_ply, sparse=F)[,1])
+  n_lbl = length(tide_labels)
+  pal_energy = colorFactor(
+    palette = 'BuGn', na.color="#00000000",
+    domain  = 1:n_lbl)
+  pal_depth  = colorFactor('OrRd', cables3$depth, reverse=T)
 
-    # https://nrelscience.org/2013/05/30/this-is-how-i-did-it-mapping-in-r-with-ggplot2/
-    d = as.data.frame(r, xy=T) %>% as_tibble()
-    colnames(d) <- c('lon','lat','value')
-    d = d %>% filter(!is.na(value))
-    
-    p = ggplot() + 
-      geom_raster(data=d, aes(x=lon, y=lat, fill=value)) + 
-      scale_fill_gradientn(
-        legend_title,
-        colours=rev(brewer.pal(11,'YlGnBu')),
-        limits=c(0,cellStats(r, 'max')),
-        na.value = 'transparent') +
-      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
-      geom_sf(data=eez, fill=NA, color='gray40') +
-      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
-      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
-      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
-      coord_sf(
-        xlim=bb[c('xmin','xmax')], 
-        ylim=bb[c('ymin','ymax')]) +
-      theme(
-        legend.background = element_rect(fill='grey90'),
-        axis.title.x=element_blank(),
-        axis.title.y=element_blank(),  
-        legend.key = element_blank())
-      
-    if (fig_type=='pdf'){
-      pdf(fig_ext, width=6.5, height=5)
-    }  else {
-      png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
-    }
-    print(p)
-    dev.off()
-    
-  }
-  #system(sprintf('open %s', fig))
-  #knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
+  m = leaflet(
+    options=c(leafletOptions(), attributionControl=F, zoomControl=F)) %>% 
+    addProviderTiles('Stamen.TonerLite', group = 'B&W') %>%
+    #addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
+    addRasterImage(
+      r_m, project=F, group=legend_title,
+      colors=pal_energy, opacity=0.7) %>%
+    addPolygons(
+      data = cables3, group='Min. Cable (2x)',
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, stroke=F) %>%
+    addPolygons(
+      data = cables2, group='Rec. Cable (3x)',
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, stroke=F) %>%      
+    addPolylines(
+      data = cables, group='Cables',
+      color='black', opacity = 0.5, weight=0.4) %>%
+    fitBounds(bb[1,'min'],bb[2,'min'],bb[1,'max'],bb[2,'max']) %>%
+    addLegend(
+      position = 'bottomright', 
+      colors   = pal_energy(1:n_lbl), 
+      labels   = tide_labels,
+      title=legend_title) %>%
+    addLegend(
+      position='bottomright', 
+      pal=pal_depth, values=cables3$depth, title='Cable<br>depth (m)') %>%
+    # addLayersControl(
+    #   baseGroups = c('Ocean','B&W'),
+    #   overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
+    #   options = layersControlOptions(collapsed=T)) %>%
+    addScaleBar('bottomleft')
+   m
 }
 
 # calculate length of cables / comment to speed up
@@ -433,16 +393,47 @@ wrld2   = st_as_sf(map('world2', plot=F, fill=T))
 usa_eez = read_sf(usa_rgn_geo)
 land    = read_sf(land_usaeez_geo)
 lns_d1x = read_sf(lns_d1x_rgn_geo)
-dx2     = read_sf(dx2_geo)
-dx3     = read_sf(dx3_geo)
+dx2     = read_sf(dx2_depth_geo)
+dx3     = read_sf(dx3_depth_geo)
 usa_dx = read_csv(usa_dx_csv)
+
+cbls2 = dx2 %>%
+  filter(
+    depth_factor != depth_labels[1]) %>%
+  mutate(
+    depth = factor(
+      x      = depth_factor,
+      levels = depth_labels[-1],
+      labels = depth_labels[-1],
+      ordered = T))
+cbls3 = dx3  %>%
+  filter(
+    depth_factor != depth_labels[1]) %>%
+  mutate(
+    depth = factor(
+      x      = depth_factor,
+      levels = depth_labels[-1],
+      labels = depth_labels[-1],
+      ordered = T))
+
+# set to [-180,180] from [0,360] for tide raster leaflet -- hacked at:
+#  [sf::st_transform not honoring +lon_wrap](https://github.com/edzer/sfr/issues/280)
+cbls_180 = lns_d1x %>%
+    mutate(geometry = (geometry + c(360,90)) %% c(-360) - c(0,-360+90)) %>% 
+    st_set_crs(crs_gcs)
+cbls2_180 = cbls2 %>%
+    mutate(geometry = (geometry + c(360,90)) %% c(-360) - c(0,-360+90)) %>% 
+    st_set_crs(crs_gcs)
+cbls3_180 = cbls3  %>%
+    mutate(geometry = (geometry + c(360,90)) %% c(-360) - c(0,-360+90)) %>% 
+    st_set_crs(crs_gcs)
 ```
 
 # Executive Summary {-}
 
-Marine energy (offshore wind, tidal, wave) promises to diversify the U.S. renewable energy porfolio, which is important to reducing greenhouse gas emissions that contribute to climate change and reducing reliance on foreign non-renewable energy sources for national security. Development of these marine energy resources in the U.S. lags considerably behind Europe and other developed countries. The first (and currently only) U.S. commercial facility in Block Island, Rhode Island went into production December of 2016. As implementation costs for these technologies continue to drop and increasingly ambitious targets for renewable energy are set, planning of new marine renewable energy development needs to effectively ev competing ocean uses that may conflict.
+Marine energy (offshore wind, tidal, wave) promises to diversify the U.S. renewable energy porfolio, which is important to reducing greenhouse gas emissions that contribute to climate change and reducing reliance on foreign non-renewable energy sources for national security. Development of these marine energy resources in the U.S. lags considerably behind Europe and other developed countries. The first (and currently only) U.S. commercial facility in Block Island, Rhode Island went into production December of 2016. As implementation costs for these technologies continue to drop and increasingly ambitious targets for renewable energy are set, planning of new marine renewable energy development needs to effectively evaluate competing ocean uses that may come into conflict.
 
-Operation and maintenance of submarine cables may conflict with marine renewable energy development. Although submarine cable locations are publicly accessible, safe setback distances are not readily available for planning new marine renewable energy development.
+Operation and maintenance of submarine cables may conflict with marine renewable energy development. The submarine cable industry handles 99% of internet and other forms of telecommunication between land masses for commercial and military purposes, and is thus vital to the larger US economy. Although submarine cable locations are publicly accessible through electronic navigation charts, safe setback distances are not yet available for planning new marine renewable energy development.
 
 We applied industry-advised safety buffers that varied with depth to existing submarine cables for "minimum" (2\*depth, i.e. "2z") and "recommended" (3\*depth, i.e. "3z") horizontal distances, both having a minimum 500 m buffer. Of the original `r accounting(lns_km, digits=0)` km in the "NOAA Charted Submarine cables in the United States as of December 2012" dataset (Figure \@ref(fig:mapCableTerritories)), `r accounting(lns_d1x_km, digits=0)` km fell within the 200 nm of the US exclusive economic zone (EEZ), which was analyzed across `r length(unique(lns_d1x$territory))` territories that overlapped with the cables (Figure \@ref(fig:mapCableBuffers)). A custom Equal Area Albers projection based on 1/6th the extent of each territory was individually applied to minimize spatial distortion when buffering distances at 100 m depth increments using the GEBCO 30 arc-second global grid. The cable buffer area ranged from `r hi = usa_dx %>% arrange(desc(cable3_pct)) %>% head(1); hi$cable3_pct %>% percent()` (`r hi$cable3_km2 %>% accounting(digits=0)` km^2^ [3z] of `r hi$area_km2 %>% accounting(digits=0)` km^2^ total) in the `r hi$territory` owing to many cables present and the steep continental shelf, to virtually nill `r lo = usa_dx %>% arrange(cable3_pct) %>% head(1); lo$cable2_pct %>% percent()` (`r lo$cable2_km2 %>% accounting(digits=0)` km^2^ [2z] of `r lo$area_km2 %>% accounting(digits=0)` km^2^ total) in `r lo$territory` (Table 2).
 
@@ -511,9 +502,9 @@ knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
 ```{r tbl01Territories}
 # territories with energy
 ter_energy = map2(
-  c(wind_depth_cbls_csv, wave_depth_cbls_csv, tide_depth_cbls_csv), 
-  c('wind','wave','tide'), 
-  read_cbls) %>%
+  c(tide_depth_cbls_csv, wave_depth_cbls_csv, wind_depth_cbls_csv), 
+  c('tide','wave','wind'),
+  ~ read_csv(.x) %>% mutate(form = .y)) %>%
   bind_rows() %>%
   group_by(territory, form) %>%
   summarize(
@@ -639,7 +630,7 @@ All analytical code to generate outputs, inclulding this data driven report, are
 Of the original `r accounting(lns_km, digits=0)` km in the "NOAA Charted Submarine cables in the United States as of December 2012" dataset (Figure \@ref(fig:mapCableTerritories)), `r accounting(lns_d1x_km, digits=0)` km fell within the 200 nm of the US exclusive economic zone (EEZ), which was analyzed across `r length(unique(lns_d1x$territory))` territories that overlapped with the cables (Figure \@ref(fig:mapCableBuffers)). The cable buffer area ranged from `r hi = usa_dx %>% arrange(desc(cable3_pct)) %>% head(1); hi$cable3_pct %>% percent()` (`r hi$cable3_km2 %>% accounting(digits=0)` km^2^ [3z] of `r hi$area_km2 %>% accounting(digits=0)` km^2^ total) in the `r hi$territory` owing to many cables present and the steep continental shelf, to virtually nill `r lo = usa_dx %>% arrange(cable3_pct) %>% head(1); lo$cable2_pct %>% percent()` (`r lo$cable2_km2 %>% accounting(digits=0)` km^2^ [2z] of `r lo$area_km2 %>% accounting(digits=0)` km^2^ total) in `r lo$territory` (Table 2).
 
 ```{r tbl02CableBufferTerritories}
-caption  = "Table 2: Overlap of cable seperation schemes for new facilities (2 * depth) and new cables (3 * depth) with area of territory as absolute area (km2) or as a percentage (%) of territory area. Horizontal bars indicate value relative to rest of column. Territories having submarine cables but no energy resource characterization (tidal, wind or wave) are lumped into \"Other\" territories: Guam, Johnston Atoll, N Mariana Islands, Palmyra Atoll, Wake Island."
+caption  = "Table 2: Area of seperation schemes from submarine cables for new facilities (2 * depth) and new cables (3 * depth) as absolute area (km2) or as a percentage (%) of territory total area. Horizontal bars indicate value relative to rest of column. Territories having submarine cables but no energy resource characterization (tidal, wind or wave) are lumped into \"Other\" territories: Guam, Johnston Atoll, N Mariana Islands, Palmyra Atoll, Wake Island."
 
 ter_other = read_lines(ter_other_txt)
 
@@ -650,12 +641,16 @@ tbl = ter_tbl %>%
   left_join(
     dx2 %>% 
       st_set_geometry(NULL) %>%
-      rename(cable2_km2 = area_km2),
+      # sum across depths
+      group_by(territory) %>%
+      summarize(cable2_km2 = sum(area_km2)),
     by='territory') %>%
   left_join(
     dx3 %>% 
       st_set_geometry(NULL) %>% 
-      rename(cable3_km2 = area_km2),
+      # sum across depths
+      group_by(territory) %>%
+      summarize(cable3_km2 = sum(area_km2)),
     by='territory')
 
 tbl = tbl %>%
@@ -721,260 +716,192 @@ tbl %>%
 
 Generally the highest proportion of energy is in the lower classes least likely for development where the highest area of overlap with cable buffers also exist (Figure \@ref(fig:pltEnergy); Table 3). The highest wind speed classes (10-11 & 11-12 m/s) are however also occupied by the highest percentage of cable buffer overlap (55.7% & 39.8% for 3z, 39.8% & 15.9% for 2z respectively). These uncommon high wind speed areas are limited to Hawaii and West territories (Table 6; Figure \@ref(fig:pltWind) for bargraph; Figure \@ref(fig:HawaiiMapWind) for Hawaii wind map; Figure \@ref(fig:WestMapWind) for West wind map). Overall wave energy has a bimodal distribution, most abundant in the lowest class (997,570 km^2^ for 0-10 kW/m) with a sharp drop at the next lowest class (292,692 km^2^ for 0-10 kW/m) and then ramping up to roughly half the highest class (532,533 km^2^ for >30 kW/m). Overlap with cable buffers for the highest two classes (20-30 & >30 kW/m) is just over 5% (5.2% & 5% for 2z, 6.8% & 6.7% for 3z). Similar to wind, these high energy wave classes are limited to the Pacific territories of Hawaii, West and  Alaska (wind for Alaska was not available) (Table 5; Figure \@ref(fig:pltWave) for bargraph; Figure \@ref(fig:HawaiiMapWave) for Hawaii wave map; Figure \@ref(fig:WestMapWave) for West wave map; Figure \@ref(fig:AlaskaMapWave) for Alaska wave map). Tidal power is extremely dominated by the lowest energy class of 0-500 W/m^2^ covering 403,781 km^2^, which is 99.6% of the total area assessed. The cable overlap for the rare higher energy areas is at most 20.1% (12 of 59 km^2^) for 500-1,000 W/m^2^ in the West and less than 3% for the even rarer higher energy classes of 1,000-1,500 or >1,500 found only in Alaska or the East.
 
-```{r pltEnergy, fig.cap='Energy by area and power class per US territory with cable overlay (minimum - recommended %).'}
+```{r pltEnergy, fig.cap='Area of energy classes per depth bin across forms of energy resource characterization (tidal, wave and wind) with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Overlap of new cables buffer (3z) is inclusive of the new facilities buffer (2z) so the height of the bar represents total area for the energy class. Assessed area of overlap with energy resource characterization is limited to a maximum depth (tidal: < 100 m; wave: < 200 m; wind: < 1000 m) and minimum energy classes (tidal: > 500 $W/m^2$; wave: > 10 $kW/m$; wind > 7 $m/s$) for viable renewable energy development.'}
 
-#tbl_form_cbls
-#View(tbl_form_cbls)
-  
-# mutate(
-#   energy = factor(
-#     x      = sprintf('%s_%04d', form, energy_num), 
-#     levels = sprintf('%s_%04d', form, energy_num), 
-#     label  = energy_lbl, ordered=T))
-
-
-# depth_levels = c(-5000,      50,       150,         600,     5000)
-# depth_labels = c( '<0', '0-100', '100-200', '200-1,000', '>1,000')
-# tide_breaks = c(0,500,1000,1500,10753)
-# tide_labels = c('0-500','500-1,000','1,000-1,500','>1,500')
-# wind_labels = c('<=7', '7-8', '8-9', '9-10', '10-11', '11-12')
-# wave_labels = c('0-10','10-20','20-30','>30')
-
-
-cable_ord = c('min_2d'='Min.(2z)', 'rec_3d'='+Rec.(3z)', 'rem'='Free')
-  
-#View(tbl_form_cbls)
 tbl_form_cbls = map2(
-  c(wind_depth_cbls_csv, wave_depth_cbls_csv, tide_depth_cbls_csv), 
-  c('wind','wave','tide'), 
-  read_cbls) %>%
-  bind_rows() %>%
-  mutate(
-    depth  = ifelse(is.na(depth), depth_factor, depth),
-    energy = ifelse(is.na(energy), energy_factor, energy)) %>%
-  select(-depth_factor, -energy_factor) %>%
+  c(tide_depth_cbls_csv, wave_depth_cbls_csv, wind_depth_cbls_csv), 
+  c('tide','wave','wind'),
+  ~ read_csv(.x) %>% mutate(form = .y)) %>%
+  bind_rows() %>% # View(tbl_form_cbls)
+  rename(
+    depth  = depth_factor,
+    energy = energy_factor) %>%
   filter(
     territory == 'ALL',
-    depth != '<0') %>%
-  #select(-territory) %>%
-  mutate(
-    depth  = factor(depth, depth_labels, ordered=T),
-    energy = factor(
-      sprintf('%s %s', energy, c(tide='W/m^2',wave='kW/m',wind='m/s')[form]),
-      c(
-        sprintf('%s W/m^2', tide_labels),
-        sprintf('%s kW/m', wave_labels),
-        sprintf('%s m/s', wind_labels)), 
-      ordered=T)) %>%
-  select(form, depth, energy, area_km2, cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
-  arrange(form, depth, energy)
-
+    # remove depths
+    !depth %in% c('<0','>1,000'),
+    # remove depths relevant to energy
+    (form=='tide' & depth %in% c('0-100')) |
+    (form=='wave' & depth %in% c('0-100','100-200')) |
+    (form=='wind' & depth %in% c('0-100','100-200','200-1,000')),
+    # remove lowest energy classes
+    !(form=='tide' & energy == '0-500'),
+    !(form=='wave' & energy == '0-10'),
+    !(form=='wind' & energy == '<=7')) %>%
+  select(form, energy, depth, area_km2, cable2_km2, cable3_km2, cable2_pct, cable3_pct)
 write_csv(tbl_form_cbls, '../data/energy-depth-cables_all.csv')
 
-# View(tbl_form_cbls %>% arrange(form, depth, energy))
+tbl_form_cbls = read_csv('../data/energy-depth-cables_all.csv')
 
-#paste(names(tbl_form_cbls), collapse=', ')
-d_p = tbl_form_cbls %>%
-  filter(
-    # summarize by depths relevant to energy
-    !(form=='tide' & depth %in% c('0-100')),
-    !(form=='wave' & depth %in% c('0-100','100-200')),
-    !(form=='wind' & depth %in% c('0-100','100-200','200-1,000')),
-    # remove lowest classes
-    !(form=='tide' & energy == '0-500 W/m^2'),
-    !(form=='wave' & energy == '0-10 kW/m'),
-    !(form=='wind' & energy == '<=7 m/s')) %>%
-  group_by(form, energy) %>%
-  summarize(
-    area_km2 = sum(area_km2),
-    cable2_km2 = sum(cable2_km2),
-    cable3_km2 = sum(cable3_km2)) %>%
-  ungroup() %>%
+p_lbl = tbl_form_cbls %>%
   mutate(
-    min_2d = cable2_km2,
-    rec_3d = cable3_km2 - cable2_km2,
-    rem    = area_km2 - cable3_km2) %>%
+    lbl     = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100)) %>%
+  select(form, energy, depth, lbl, area_km2)
+
+p_df = tbl_form_cbls %>%
+  mutate(
+    min_2d  = cable2_km2,
+    rec_3d  = cable3_km2 - cable2_km2,
+    rem     = area_km2 - cable3_km2) %>%
   select(
-    form, energy, min_2d, rec_3d, rem) %>%
-  gather(type, km2, -energy, -form) %>%
+    form, energy, depth, min_2d, rec_3d, rem) %>%
+  gather(type, km2, -form, -energy, -depth) %>%
   mutate(
-    type = factor(
+    depth = factor(depth, depth_labels, ordered=T),
+    type  = factor(
       type,
       names(cable_ord),
       cable_ord, ordered=T)) %>%
-  arrange(form, energy, type)
+  arrange(form, energy, depth, type)
 
-txt_adj = tbl_form_cbls %>% 
-  summarize(txt_adj = max(area_km2)/1000*0.025) %>% 
-  .$txt_adj
-
-p = ggplot(
-  data=d_p %>% filter(form %in% c('wave','wind')),
-  aes(x = energy, y = km2/1000, fill=factor(type))) +
-  #scale_fill_brewer(palette = 'Spectral') +
-  geom_col() +
-  # geom_text(
-  #   data=tbl_form_cbls, 
-  #   aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
-  #   position = position_nudge(y = txt_adj), size=2) +
-  labs(
-    #title    = 'Energy by Area and Power Class per US Territory', 
-    #subtitle = 'with Cable Overlay (Minimum - Recommended %)', 
-    x='Energy', y='Area (1,000 km^2)', fill='Cable') +
-  theme(
-    legend.justification = c(1,1), 
-    legend.position      = c(1,1),
-    axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  facet_wrap(~form, scales='free_x')
-print(p)
-
-
-p = ggplot(
-  data=d_p %>% filter(form %in% c('tide')),
-  aes(x = energy, y = km2/1000, fill=factor(type))) +
-  #scale_fill_brewer(palette = 'Spectral') +
-  geom_col() +
-  # geom_text(
-  #   data=tbl_form_cbls, 
-  #   aes(label=pct_lbl, x=energy, y=area_km2/1000, fill=NULL), 
-  #   position = position_nudge(y = txt_adj), size=2) +
-  labs(
-    #title    = 'Energy by Area and Power Class per US Territory', 
-    #subtitle = 'with Cable Overlay (Minimum - Recommended %)', 
-    x='Energy', y='Area (1,000 km^2)', fill='Cable') +
-  theme(
-    legend.justification = c(1,1), 
-    legend.position      = c(1,1),
-    axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  facet_wrap(~form, scales='free_x')
-print(p)
-```
-
-```{r tbl03Energy}
-d = tbl_form_cbls
-energy_hdr = 'Amount'
-caption = 'Table 3: Area overlap with cables by form of energy broken into size classes across all territories.'
-
-# update energy column for proportion in color_box
-e_lbls = c(
-    '7=>','7-8',  '8-9','9-10','10-11','11-12', #  1:6
-   '0-10',   '10-20',    '20-30',  '30<',       #  7:10
-  '0-500','500-1000','1000-1500','1500<')       # 11:14
-
-e_idx = c(1,7,11, 2,8,12, 3, 4,9,13, 5,10,14, 6) # setdiff(1:length(e_lbls), e_idx) 
-e_lkup = setNames(e_idx, 1:14)
-d = d %>% 
+p_df_tide = p_df %>% 
+  filter(form == 'tide', depth == '0-100') %>%
   mutate(
-    form = ifelse(
-      duplicated(form), '',       c(
-        'tide'='Tidal Power (W/m2)',
-        'wave'='Wave Energy (kW/m)',
-        'wind'='Wind Speed (m/s)')[d$form]),
-    energy = factor(
-      x = e_lkup %>% sort() %>% names %>% as.integer,
-      levels = 1:14,
-      labels = e_lbls[e_idx],
-      ordered=T),
-    area_km2   = accounting(area_km2, digits=0),
-    cable2_km2 = accounting(cable2_km2, digits=0),
-    cable3_km2 = accounting(cable3_km2, digits=0),
-    cable2_pct = percent(cable2_pct, digits=1),
-    cable3_pct = percent(cable3_pct, digits=1)) %>%
-  select(
-    form, energy, area_km2,
-    cable2_km2, cable2_pct, cable3_km2, cable3_pct)
+    energy = factor(energy, tide_labels, ordered=T))
+p_lbl_tide = p_lbl %>%
+  filter(form == 'tide') %>%
+  mutate(
+    energy = factor(energy, tide_labels, ordered=T),
+    type   = NA)
 
-hdr = htmltools::withTags(table(
-  class = 'display',
-  thead(
-    tr(
-      th(rowspan=2, 'Energy'),
-      th(rowspan=2, 'Class'),
-      th(rowspan=2, HTML('Area (km<sup>2</sup>)')),
-      th(colspan=2, 'Min. Cable (2z)'),
-      th(colspan=2, 'Rec. Cable (3z)')),
-    tr(
-      th(HTML('Area (km<sup>2</sup>)')),
-      th('(%)'),
-      th(HTML('Area (km<sup>2</sup>)')),
-      th('(%)')))))
+p_tide = ggplot(
+  data = p_df_tide,
+  aes(x = energy, y = km2/1000, fill=type)) +
+  geom_col() +
+  geom_text(
+    data=p_lbl_tide,
+    aes(x = energy, y = area_km2/1000, label=lbl), vjust=-0.5, size=2.5) +
+  labs(
+    x='Tidal power (W/m^2)', y='Area (1,000 km^2)', fill='Overlap') +
+  theme(
+    legend.justification = c(1,1), 
+    #legend.position      = c(1,1)) +
+    legend.position      = 'none') +
+  expand_limits(y = 1.3) +
+  facet_wrap(~depth, labeller = label_both)
 
-d %>%
-  formattable(
-    list(
-      energy     = color_bar('lightblue'),
-      area_km2   = color_bar('lightgray'),
-      cable2_km2 = color_bar('lightpink'),
-      cable3_km2 = color_bar('lightgreen'))) %>%
-  as.datatable(
-    rownames=F, container=hdr,
-    caption = caption,
-    options = list(
-      dom='t', # off: n_entries/search/paging/ordering
-      pageLength = nrow(d), ordering=F,
-      columnDefs = list(list(className='dt-right', targets=1:5))))
 
-# d %>%
-#   format_table(
-#     list(
-#       energy     = color_bar('lightblue'),
-#       area_km2   = color_bar('lightgray'),
-#       cable2_km2 = color_bar('lightpink'),
-#       cable3_km2 = color_bar('lightgreen')),
-#     caption=caption)
+# wave ----
+p_df_wave = p_df %>% 
+  filter(form == 'wave') %>%
+  mutate(
+    energy = factor(energy, wave_labels, ordered=T))
+p_lbl_wave = p_lbl %>%
+  filter(form == 'wave') %>%
+  mutate(
+    energy = factor(energy, wave_labels, ordered=T),
+    type   = NA)
+
+p_wave = ggplot(
+  data = p_df_wave,
+  aes(x = energy, y = km2/1000, fill=type)) +
+  geom_col() +
+  geom_text(
+    data=p_lbl_wave,
+    aes(x = energy, y = area_km2/1000, label=lbl), vjust=-0.5, size=1.8) +
+  labs(
+    x='Wave energy (kW/m)', y='Area (1,000 km^2)', fill='Overlap') +
+  theme(
+    legend.justification = c(1,1), 
+    legend.position      = c(1,1)) +
+  expand_limits(y = 700) +
+  facet_wrap(~depth, labeller = label_both)
+
+# wind ----
+#wind_labels2 = c('<=7','7-8','8-9','9-10','>10')
+p_df_wind = p_df %>% 
+  filter(form == 'wind') %>%
+  mutate(
+    energy = factor(energy, wind_labels, ordered=T))
+p_lbl_wind = p_lbl %>%
+  filter(form == 'wind') %>%
+  mutate(
+    lbl = sprintf('%s : %s', comma(round(area_km2)), lbl),
+    energy = factor(energy, wind_labels, ordered=T),
+    type   = NA)
+
+p_wind = ggplot(
+  data = p_df_wind,
+  aes(x = energy, y = km2/1000, fill=type)) +
+  geom_col() +
+  geom_text(
+    data=p_lbl_wind,
+    #aes(x = energy, y = area_km2/1000, label=lbl), vjust=-0.5) +
+    aes(x = energy, y = 75, label=lbl), angle=90, size=2.5) + #, vjust='bottom') +
+  labs(
+    x='Wind speed (m/s)', y='Area (1,000 km^2)', fill='Overlap') +
+  theme(
+    legend.justification = c(1,1), 
+    #legend.position      = c(1,1)) +
+    legend.position      = 'none') +
+  facet_wrap(~depth, labeller = label_both)
+
+library(gridExtra)
+grid.arrange(
+  p_tide, p_wave, p_wind,
+  layout_matrix = rbind(
+    c(1,2),
+    c(3,3)))
 ```
 
 ### Tidal
 
-```{r pltTide, fig.cap='Tidal power (W/m2) and area per US territory with cable overlay (minimum - recommended %).'}
+```{r pltTide, fig.cap='Area of tidal power classes ($W/m^2$) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Overlap of new cables buffer (3z) is inclusive of the new facilities buffer (2z) so the height of the bar represents total area for the energy class. Assessed area of overlap with tidal energy resource characterization is limited to a maximum depth (< 100 m) and minimum energy classes (> 500 $W/m^2$) for viable tidal energy development.'}
 plot_cbls(
-  csv   = tide_cbls_csv, 
-  #title = 'Tidal Energy by Area and Power Class per US Territory',
-  xlab  = 'Tidal power (W/m2)',
-  legend_position      = c(1,1),
-  legend_justification = c(1,1))
+  csv    = tide_depth_cbls_csv, 
+  params = plot_energy_params$tide)
 ```
 
 ```{r tbl04Tide}
 fmt_tbl(
-  csv        = tide_cbls_csv, 
-  energy_hdr = 'Tidal power (W/m2)',
-  caption    = 'Table 4: Area overlap with cables for tidal power (W/m2) by territory.')
+  csv        = tide_depth_cbls_csv, 
+  params     = plot_energy_params$tide,
+  energy_hdr = 'Tidal power (W/m<sup>2</sup>)',
+  caption    = 'Table 5: Area of tidal power classes (W/m2) per US territory with percent overlap of safety seperation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 100 m) and minimum energy classes (> 500 W/m2) for viable tidal energy development.')
 ```
 
 ### Wave
 
-```{r pltWave, fig.cap='Wave energy (kW/m) and area per US territory with cable overlay (minimum - recommended %).'}
+```{r pltWave, fig.cap='Area of wave energy classes ($kW/m$) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Overlap of new cables buffer (3z) is inclusive of the new facilities buffer (2z) so the height of the bar represents total area for the energy class. Assessed area is limited to a maximum depth (> 200 m) and minimum energy classes (> 10 $kW/m$) for viable wave energy development.'}
 plot_cbls(
-  csv   = wave_cbls_csv,
-  #title = 'Wave Energy by Area and Power Class per US Territory',
-  xlab  = 'Wave energy (kW/m)')
+  csv    = wave_depth_cbls_csv, 
+  params = plot_energy_params$wave,
+  legend_position      = c(1,0.3),
+  legend_justification = c(1,1))
 ```
 
 ```{r tbl05Wave}
 fmt_tbl(
-  csv        = wave_cbls_csv, 
+  csv        = wave_depth_cbls_csv, 
+  params     = plot_energy_params$wave,
   energy_hdr = 'Wave Energy (kW/m)',
-  caption    = 'Table 5: Area overlap with cables for wave energy (kW/m) by territory.')
+  caption    = 'Table 5: Area of wave energy classes (kW/m) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 200 m) and minimum energy classes (> 10 kW/m) for viable wave energy development.')
 ```
 
 ### Wind
 
-```{r pltWind, fig.cap='Wind speed (m/s) at 90m hub height and area per US territory with cable overlay (minimum - recommended %).'}
+```{r pltWind, cache=T, fig.cap='Area of wind speed classes ($m/s$) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Overlap of new cables buffer (3z) is inclusive of the new facilities buffer (2z) so the height of the bar represents total area for the energy class. Assessed area is limited to a maximum depth (< 1,000 m) and minimum energy classes (> 7 $m/s$) for viable wind energy development.'}
 plot_cbls(
-  csv   = wind_cbls_csv, 
-  #title = 'Wind Energy by Area and Power Class per US Territory',
-  xlab  = 'Wind speed (m/s)',
-  # legend_position      = c(0,0.47),
-  # legend_justification = c(0,1))
-  legend_justification = c(1,1), 
-  legend_position      = c(1,1))
+  csv    = wind_depth_cbls_csv, 
+  params = plot_energy_params$wind)
 ```
 
 ```{r tbl06Wind}
 fmt_tbl(
-  csv=wind_cbls_csv, energy_hdr='Wind Speed (m/s)',
-  caption='Table 6: Area overlap with cables for wind speed (m/s) at 90m hub height by territory.')
+  csv        = wind_depth_cbls_csv, 
+  params     = plot_energy_params$wind,
+  energy_hdr = 'Wind Speed (m/s)',
+  caption    = 'Table 6: Area of wind speed classes (m/s) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 1,000 m) and minimum energy classes (> 7 m/s) for viable wind energy development.')
 ```
 
 # Conclusions
@@ -985,95 +912,149 @@ Although the US currently only has one marine renewable energy facility in full 
 
 # (APPENDIX) Appendix {-} 
 
-# Detailed Maps by US Territory of Cable Buffer and Renewable Energy
+# Maps by US Territory of Cable Buffer and Renewable Energy
 
-```{r mapCable}
-for (ter in sort(unique(lns_d1x$territory))){ # ter = 'Hawaii'
-  fig = sprintf('figs/mapCable_%s', str_replace_all(ter,' ','-'))
-  map_cable(
-    ter = ter,
-    fig = fig,
-    redo = redo)
-  #system(sprintf('open %s', fig))
-}
-#knitr::include_graphics(sprintf('figs/mapCable_%s.pdf', str_replace_all(unique(lns_d1x$territory),' ','-')), dpi=fig_dpi)
+```{r map_chunk_opts}
+# set chunk figure output options for remaining maps
+opts_chunk$set(cache=T, fig.width=7, fig.height=7, fig_dpi=300)
 ```
 
-```{r mapTide}
-territories = read_csv(tide_cbls_csv) %>% 
-  filter(territory !='ALL') %>% 
-  .$territory %>% unique()
+TODO: 
+- captions for maps
 
-for (ter in territories){ # ter = 'Hawaii'
-  map_tide(
-    ter = ter,
-    legend_title = 'Tidal\npower\n(W/m2)',
-    fig = sprintf('figs/mapTide_%s', str_replace_all(ter,' ','-')),
-    redo = redo)
-  #system(sprintf('open %s', fig))
-}
-#knitr::include_graphics(sprintf('figs/mapTide_%s.pdf', str_replace_all(territories,' ','-')), dpi=fig_dpi)
+## Tide
+
+### Alaska
+
+```{r mapTideAlaska, fig.cap='Map of tidal power ($W/m^2$) in Alaska with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_tide('Alaska')
 ```
 
-```{r mapWave}
+### East
+
+```{r mapTideEast, fig.cap='Map of tidal power ($W/m^2$) in the East with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_tide('East')
+```
+
+### Gulf of Mexico
+
+```{r mapTideGulfofMexico, fig.cap='Map of tidal power ($W/m^2$) in the Gulf of Mexico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_tide('Gulf of Mexico')
+```
+
+### Puerto Rico
+
+```{r mapTidePuertoRico, fig.cap='Map of tidal power ($W/m^2$) in Puerto Rico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_tide('Puerto Rico')
+```
+
+### US Virgin Islands
+
+```{r mapTideUSVirginIslands, fig.cap='Map of tidal power ($W/m^2$) in the US Virgin Islands with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_tide('US Virgin Islands')
+```
+
+### West
+
+```{r mapTideWest, fig.cap='Map of tidal power ($W/m^2$) in the West with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_tide('West')
+```
+
+## Wave
+
+```{r mapWave_data}
 wave_sf = read_sf(wave_geo) %>%
   filter(!is.na(territory)) %>%
   mutate(
     energy = factor(
-      energy_num, unique(energy_num), unique(energy_lbl), ordered=T))
-
-for (ter in unique(wave_sf$territory)){ # ter = 'Hawaii'
-  map_energy_sf(
-    energy_sf = wave_sf,
-    ter = ter,
-    legend_title = 'Wave\nenergy\n(kW/m)',
-    redo = redo,
-    fig = sprintf('figs/mapWave_%s', str_replace_all(ter,' ','-')))
-  #system(sprintf('open %s', fig))
-  #knitr::include_graphics(fig, dpi=fig_dpi)
-}
-#knitr::include_graphics(sprintf('figs/mapWave_%s.pdf', str_replace_all(unique(wave_sf$territory),' ','-')), dpi=fig_dpi)
+      x      = energy_lbl,
+      levels = wave_labels,
+      labels = wave_labels,
+      ordered = T)) %>%
+  select(-energy_num, -energy_lbl) %>%
+  arrange(territory, energy)
 ```
 
-```{r mapWind}
+### Alaska
+
+```{r mapWaveAlaska, fig.cap='Map of wave energy ($kW/m$) in Alaska with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wave_sf, 'Alaska', 'Wave<br>energy (kW/m)')
+```
+
+### East
+
+```{r mapWaveEast, fig.cap='Map of wave energy ($kW/m$) in the East with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wave_sf, 'East', 'Wave<br>energy (kW/m)')
+```
+
+### Gulf of Mexico
+
+```{r mapWaveGulfofMexico, fig.cap='Map of wave energy ($kW/m$) in the Gulf of Mexico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wave_sf, 'Gulf of Mexico', 'Wave<br>energy (kW/m)')
+```
+
+### Hawaii
+
+```{r mapWaveHawaii, fig.cap='Map of wave energy ($kW/m$) in Hawaii with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wave_sf, 'Hawaii', 'Wave<br>energy (kW/m)')
+```
+
+### Puerto Rico
+
+```{r mapWavePuertoRico, fig.cap='Map of wave energy ($kW/m$) in Puerto Rico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wave_sf, 'Puerto Rico', 'Wave<br>energy (kW/m)')
+```
+
+### US Virgin Islands
+
+```{r mapWaveUSVirginIslands, fig.cap='Map of wave energy ($kW/m$) in the US Virgin Islands with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wave_sf, 'US Virgin Islands', 'Wave<br>energy (kW/m)')
+```
+
+### West
+
+```{r mapWaveWest, fig.cap='Map of wave energy ($kW/m$) in the West with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wave_sf, 'West', 'Wave<br>energy (kW/m)')
+```
+
+## Wind
+
+```{r mapWind_data}
 wind_sf = read_sf(wind_geo) %>%
-  arrange(energy_num) %>%
-  mutate(
-    energy = factor(
-      energy_num, unique(energy_num), unique(energy_lbl), ordered=T)) %>%
-  arrange(region, energy)
-
-for (ter in unique(wind_sf$territory)){ # ter = 'Hawaii'
-  map_energy_sf(
-    energy_sf = wind_sf,
-    ter = ter,
-    legend_title = 'Wind\nspeed\n(m/s)',
-    redo = redo,
-    fig = sprintf('figs/mapWind_%s', str_replace_all(ter,' ','-')))
-  #system(sprintf('open %s', fig))
-  #knitr::include_graphics(fig, dpi=fig_dpi)
-}
-#knitr::include_graphics(sprintf('figs/mapWind_%s.pdf', str_replace_all(unique(wind_sf$territory),' ','-')), dpi=fig_dpi)
+    filter(!is.na(territory)) %>%
+    mutate(
+      energy = factor(
+        x      = energy_lbl,
+        levels = wind_labels,
+        labels = wind_labels,
+        ordered = T)) %>%
+    select(-energy_num, -energy_lbl, -region) %>%
+    arrange(territory, energy)
 ```
 
-```{r srcTerritoryTemplate, include=F, cache=F}
-src = lapply(
-  sort(unique(lns_d1x$territory)), 
-  function(
-    ter,
-    ter_hyp   = str_replace_all(ter, ' ', '-'),
-    ter_str   = str_replace_all(ter, ' ', ''),
-    map_cable = sprintf('figs/mapCable_%s.%s', ter_hyp, fig_type),
-    map_tide  = sprintf('figs/mapTide_%s.%s', ter_hyp, fig_type),
-    map_wave  = sprintf('figs/mapWave_%s.%s', ter_hyp, fig_type),
-    map_wind  = sprintf('figs/mapWind_%s.%s', ter_hyp, fig_type),
-    has_tide  = file.exists(map_tide),
-    has_wave  = file.exists(map_wave),
-    has_wind  = file.exists(map_wind)){
-      knit_expand(file='territory_template.Rmd')})
-# write_lines(src, 'test_src.Rmd')
+### East
+
+```{r mapWindEast, fig.cap='Map of wind speed ($m/s$) in the East with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wind_sf, 'East', 'Wind<br>speed (m/s)')
 ```
 
-`r knit(text = unlist(src))`
+### Gulf of Mexico
+
+```{r mapWindGulfofMexico, fig.cap='Map of wind speed ($m/s$) in the Gulf of Mexico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wind_sf, 'Gulf of Mexico', 'Wind<br>speed (m/s)')
+```
+
+### Hawaii
+
+```{r mapWindHawaii, fig.cap='Map of wind speed ($m/s$) in Hawaii with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wind_sf, 'Hawaii', 'Wind<br>speed (m/s)')
+```
+
+### West
+
+```{r mapWindWest, fig.cap='Map of wind speed ($m/s$) in the West with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+map_energy_sf(wind_sf, 'West', 'Wind<br>speed (m/s)')
+```
+
 
 # References

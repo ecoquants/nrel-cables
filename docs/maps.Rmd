@@ -339,15 +339,3 @@ map_energy_sf(wave_sf, 'US Virgin Islands', 'Wave\nenergy\n(kW/m)')
 ```{r}
 map_energy_sf(wave_sf, 'West', 'Wave\nenergy\n(kW/m)')
 ```
-
-
-```{r mapTide leaflet, eval=F}
-## Tidal
-#tide = raster(tide_tif)
-#plot(tide_tif)
-# TODO: in report.Rmd, leaflet viz tide rasters per territory w/ regex in data/tide_ter-*.tif
-
-territories = read_csv(tide_cbls_csv) %>% 
-  filter(territory !='ALL') %>% 
-  .$territory %>% unique()
-```
