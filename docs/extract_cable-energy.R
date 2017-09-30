@@ -762,11 +762,14 @@ if (any(!file.exists(wave_cbl2_depth_geo), !file.exists(wave_cbl3_depth_geo), re
       mutate(geometry = st_buffer(geometry, dist=0))
   }
 
+  wave0 = wave # wave = wave0
+  # DOH!: big prob
   wave = wave %>% 
     mutate(
       energy_factor = factor(
         x       = energy_lbl,
-        labels  = wave_labels,
+        #labels  = wave_labels, # DOH!: 0-10 -> 10-20, 10-20 -> 20-30, 20-30 -> >30, >30 -> 0-10
+        levels  = wave_labels,  # FIX 
         ordered = T)) %>%
     select(-energy_num, -energy_lbl)
   
@@ -893,7 +896,7 @@ if (!file.exists(wave_depth_cbls_csv)){
           ordered = T),
         energy_factor = factor(
           x      = wave,
-          levels = seq(1, length(wave_labels)),
+          levels = seq(1, length(wave_labels)), # TODO: check this 1:n vs wave_labels
           labels = wave_labels,
           ordered = T)) %>%
       group_by(depth_factor, energy_factor) %>%
@@ -945,7 +948,7 @@ wave_depth_cbls = read_csv(wave_depth_cbls_csv) %>%
       x      = energy_factor,
       levels = wave_labels,
       labels = wave_labels,
-      ordered = T)) View(wave_depth_cbls)
+      ordered = T)) # View(wave_depth_cbls)
 
 # wind: intersect with depth-binned cables & dissolve on region & energy -----
 if (any(!file.exists(wind_cbl2_depth_geo), !file.exists(wind_cbl3_depth_geo), redo)){
@@ -956,11 +959,13 @@ if (any(!file.exists(wind_cbl2_depth_geo), !file.exists(wind_cbl3_depth_geo), re
       mutate(geometry = st_buffer(geometry, dist=0))
   }
   
+  # wind0 = wind # wind = wind0
   wind = wind %>% 
     mutate(
       energy_factor = factor(
         x       = energy_lbl,
-        labels  = wind_labels,
+        #labels  = wind_labels, # DOH!: <=7 -> <=7, 10-11 -> 7-8, 7-8 -> 9-10, 8-9 -> 10-11, 9-10 -> 11-12
+        levels  = wind_labels,  # FIX
         ordered = T)) %>%
     select(-energy_num, -energy_lbl)
   
