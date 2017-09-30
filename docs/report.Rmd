@@ -536,6 +536,7 @@ write_lines(ter_other, ter_other_txt)
 ter_cables = ter_cables %>%
   filter(
     !territory %in% ter_other) %>%
+  arrange(territory) %>%
   bind_rows(
     tibble(
       territory = 'Other',
@@ -546,11 +547,13 @@ ter_cables = ter_cables %>%
         .$length)) %>%
   mutate(length_km = length %>% as.numeric() / 1000) %>%
   select(territory, length_km)
+#ter_order = ter_cables$territory
 
 # territory areas
 ter_area = read_sf(usa_rgn_s_geo) %>%
   select(territory, area_km2) %>% 
-  st_set_geometry(NULL) #%>%
+  st_set_geometry(NULL) %>%
+  arrange(territory)
 # ter_area: summarize Other
 ter_area = ter_area %>%
   filter(
@@ -586,7 +589,7 @@ ter_smry = ter_area %>%
 ter_smry %>%
   formattable(list(
     `Territory (km2)` = color_bar('lightgray'),
-    `Cable (km)`    = color_bar('lightgray'))) %>%
+    `Cable (km)`      = color_bar('lightgray'))) %>%
   as.datatable(
     rownames = F,
     caption  = 'Table 1: Territories having submarine cables within the United States exclusive economic zone (EEZ) of 200 nm. Territory area (km2) and summed length of submarine cables (km) are reported with light gray horizontal bars to visually indicate value relative to rest of column. Remaining columns indicate whether energy resources (tidal, wave or wind) are characterized for the territory. Territories having submarine cables but no energy resource characterization are lumped into "Other" territories: Guam, Johnston Atoll, N Mariana Islands, Palmyra Atoll, Wake Island.',
