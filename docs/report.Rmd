@@ -611,7 +611,7 @@ The International Cable Protection Committee (ICPC) of the North American Submar
 
 ## Depth-Varying Cable Buffer
 
-A depth-varying buffer for "minimum" (2z) and "recommended" (3z) was achieved by intersecting depth with cables and buffering out by depth. Depth from the GEBCO grid was reclassed into 100 m increments starting with 250 m to apply a 500 m minimum for the 2z and 3z products, and converted to polygons for intersecting with the cable linear features. A custom Albers Equal Area Conic projection based on 1/6th the extent ^[The "one-sixth rule" for Albers Equal Area Conic projection: http://desktop.arcgis.com/en/arcmap/latest/map/projections/albers-equal-area-conic.htm#GUID-2158C4F9-F197-458E-94F0-84933C1BE6B7] of each territory was individually applied to minimize spatial distortion when buffering.
+A depth-varying buffer from existing submarine cables for new facilities (2z) and cables (3z) was achieved by intersecting depth with cables and buffering out by depth. Depth from the GEBCO grid was reclassed into 100 m increments starting with 250 m to apply a 500 m minimum for the 2z and 3z products, and converted to polygons for intersecting with the cable linear features. A custom Albers Equal Area Conic projection based on 1/6th the extent ^[The "one-sixth rule" for Albers Equal Area Conic projection: http://desktop.arcgis.com/en/arcmap/latest/map/projections/albers-equal-area-conic.htm#GUID-2158C4F9-F197-458E-94F0-84933C1BE6B7] of each territory was individually applied to minimize spatial distortion when buffering.
 
 # Results
 
@@ -619,8 +619,8 @@ All analytical code to generate outputs, including this data driven report, are 
 
 - `data/`
     * [`lns_d1x.geojson`](https://github.com/ecoquants/nrel-cables/blob/master/data/lns_d1x.geojson): lines of submarine cables segmented at 100 m increments with depth value for buffering, ie minimum 500 m and depth (z) for multiplying by 2 (2z) or 3 (3z).
-    * [`buf_2xdepth_incr100m.geojson`](https://github.com/ecoquants/nrel-cables/blob/master/data/buf_2xdepth_incr100m.geojson): polygons for "minimum" avoidance zone for buffer at twice the depth (2z), mimimum 500 m.
-    * [`buf_3xdepth_incr100m.geojson`](https://github.com/ecoquants/nrel-cables/blob/master/data/buf_3xdepth_incr100m.geojson): polygons for "recommended" avoidance zone for buffer at three times the depth (3z), mimimum 500 m.
+    * [`buf_2xdepth_incr100m.geojson`](https://github.com/ecoquants/nrel-cables/blob/master/data/buf_2xdepth_incr100m.geojson): polygons for siting new facilities buffered from existing submarine cables at twice the depth (2z), mimimum 500 m.
+    * [`buf_3xdepth_incr100m.geojson`](https://github.com/ecoquants/nrel-cables/blob/master/data/buf_3xdepth_incr100m.geojson): polygons for siting new cables buffered from existing submarine cables at three times the depth (3z), mimimum 500 m.
 - `docs/`
     * [`packages_vars.R`](https://github.com/ecoquants/nrel-cables/blob/master/docs/packages_vars.R): R code with variables and packages used across analysis (`create_cable-buffer.R`, `extract_cable-energy.R`) and reporting (`report.Rmd`)
     * [`create_cable-buffer.R`](https://github.com/ecoquants/nrel-cables/blob/master/docs/create_cable-buffer.R): R code to generate cable buffers at 100 m depth increments.
@@ -756,7 +756,7 @@ p_df = tbl_form_cbls %>%
   mutate(
     min_2d  = cable2_km2,
     rec_3d  = cable3_km2 - cable2_km2,
-    rem     = area_km2 - cable3_km2) %>%
+    rem     = area_km2 - cable3_km2) %>% 
   select(
     form, energy, depth, min_2d, rec_3d, rem) %>%
   gather(type, km2, -form, -energy, -depth) %>%
@@ -894,7 +894,7 @@ fmt_tbl(
 
 ### Wind
 
-```{r pltWind, cache=F, fig.cap='Area of wind speed classes ($m/s$) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Overlap of new cables buffer (3z) is inclusive of the new facilities buffer (2z) so the height of the bar represents total area for the energy class. Assessed area is limited to a maximum depth (< 1,000 m) and minimum energy classes (> 7 $m/s$) for viable wind energy development.'}
+```{r pltWind, fig.cap='Area of wind speed classes ($m/s$) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Overlap of new cables buffer (3z) is inclusive of the new facilities buffer (2z) so the height of the bar represents total area for the energy class. Assessed area is limited to a maximum depth (< 1,000 m) and minimum energy classes (> 7 $m/s$) for viable wind energy development.'}
 plot_cbls(
   csv    = wind_depth_cbls_csv, 
   params = plot_energy_params$wind)
