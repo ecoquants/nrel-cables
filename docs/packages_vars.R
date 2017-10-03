@@ -114,7 +114,7 @@ tide_res_dd   = 0.005 # tide raster resolution in decimal degrees
 tide_csv      = '../data/tide.csv'
 #tide_cbls_csv = '../data/tide_cables.csv'
 tide_depth_cbls_csv = '../data/tide_depth_cables.csv'
-
+tbl_form_cbls_csv   = '../data/energy-depth-cables_all.csv'
 
 plot_energy_params = list(
   tide = list(
