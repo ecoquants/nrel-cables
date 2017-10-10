@@ -29,12 +29,13 @@ bibliography: nrel-cables.bib
 ```{r setup, include=FALSE}
 # set working directory
 if (basename(getwd()) == 'nrel-cables') setwd('docs')
+knitr::opts_chunk$set(warning=F, message=F, eval=T, echo=F, cache=T) # DEBUG
 
 # load packages and variables
 source('./packages_vars.R')
+```
 
-#opts_chunk$set(warning=F, message=F)
-opts_chunk$set(warning=F, message=F, eval=T, cache=T) # DEBUG
+```{r includes}
 fig_type = 'png' # 'png','pdf','html'
 fig_dpi = 300
 redo = F
@@ -50,21 +51,12 @@ if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_k
 
 fmt_tbl = function(csv, params, energy_hdr, caption){
 
-  # csv        = wave_depth_cbls_csv
-  # params     = plot_energy_params$wave
-  # energy_hdr = 'Wave Energy (kW/m)'
-  # caption    = 'Table 5: Area overlap with cables for wave energy (kW/m) by territory.'
+  # csv = wave_depth_cbls_csv; params = plot_energy_params$wave; energy_hdr = 'Wave Energy (kW/m)'; caption = 'Table 5: Area overlap with cables for wave energy (kW/m) by territory.'
+  # csv = tide_depth_cbls_csv; params = plot_energy_params$tide
+  # energy_hdr = 'Tidal power (W/m<sup>2</sup>)'
+  # caption    = 'Table 4: Area of tidal power classes (W/m2) per US territory with percent overlap of safety separation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 100 m) and minimum energy classes (> 500 W/m2) for viable tidal energy development.'
   
   d = get_tbl_energy_cbls(csv, params)
-  
-  # correct for odd flipping from using className='dt-right'
-  d = d %>%
-    mutate(
-      energy = recode(
-        energy,
-        `<=7`='7=>',
-        `>30`='30<',
-        `>1500`='1500<'))
   
   hdr = htmltools::withTags(table(
     class = 'display',
@@ -72,38 +64,60 @@ fmt_tbl = function(csv, params, energy_hdr, caption){
       tr(
         th(rowspan=2, 'Territory'),
         th(rowspan=2, HTML(energy_hdr)),
-        th(rowspan=2, HTML('Area (km<sup>2</sup>)')),
-        th(colspan=2, 'Facilities (2z)'),
-        th(colspan=2, 'Cable (3z)')),
+        th(rowspan=2, HTML('<i>Area (km<sup>2</sup>)</i>')),
+        th(colspan=2, 'Overlap with Cable Separation'),
       tr(
-        th(HTML('Area (km<sup>2</sup>)')),
-        th('(%)'),
-        th(HTML('Area (km<sup>2</sup>)')),
-        th('(%)')))))
+        th(HTML('Min. - Max. km<sup>2</sup> (Min. - <i>Max. %</i>)')))))))
 
   d %>%
     mutate(
       territory  = ifelse(duplicated(territory), '', territory),
-      area_km2   = accounting(area_km2, digits=0),
-      cable2_km2 = accounting(cable2_km2, digits=0),
-      cable3_km2 = accounting(cable3_km2, digits=0),
-      cable2_pct = percent(cable2_pct, digits=1),
-      cable3_pct = percent(cable3_pct, digits=1)) %>%
-    select(
-      territory, energy, area_km2,
-      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
-    formattable(
-      list(
-        energy     = color_bar('lightblue'),
-        area_km2   = color_bar('lightgray'),
-        cable2_pct = color_bar('lightpink'),
-        cable3_pct = color_bar('lightgreen'))) %>%
-    as.datatable(
-      rownames=F, container=hdr, caption=caption,
+      o_2z_km2 = comma(round(cable2_km2)),
+      o_3z_km2 = comma(round(cable3_km2)),
+      o_2z_pct = sprintf('%0.1f', cable2_pct*100),
+      o_3z_pct = sprintf('%0.1f', cable3_pct*100),
+      overlap = sprintf(
+        # get sprintf for padding with spaces
+        sprintf(
+          '%%%ds - %%%ds (%%%ds - %%%ds%%%%)',
+          max(nchar(o_2z_km2)),
+          max(nchar(o_3z_km2)),
+          max(nchar(o_2z_pct)),
+          max(nchar(o_3z_pct))),
+        o_2z_km2, 
+        o_3z_km2,
+        o_2z_pct, 
+        o_3z_pct),
+      overlap     = str_replace_all(overlap, ' ', '&nbsp;'),
+      overlap_svg = sprintf(
+        '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="16" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="16" fill="Pink"></rect>
+  <text text-anchor="end" x="100%%" y="14" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', cable3_pct*100, overlap),
+area_svg = sprintf(
+  '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="14px" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="14" fill="DarkGray"></rect>
+  <text text-anchor="end" x="100%%" y="11" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', area_km2 / max(area_km2) * 100, comma(round(area_km2)))) %>% # ,
+    select(territory, energy, area_svg, overlap_svg) %>%
+    datatable(
+      escape = F,
+      rownames=F,
+      container=hdr,
+      caption=caption,    
       options = list(
-        dom='t', # off: n_entries/search/paging/ordering
-        pageLength = nrow(d), ordering=F,
-        columnDefs = list(list(className='dt-right', targets=1:5))))
+        dom='t',
+        pageLength = nrow(d), 
+        ordering=F,
+        autoWidth = TRUE,
+        columnDefs = list(
+          list(width = '80px', targets = c(2)),
+          list(width = '240px', targets = c(3)),
+          list(className='dt-right', targets=1:3))))
 }
 
 get_tbl_energy_cbls = function(csv, params){
@@ -111,7 +125,9 @@ get_tbl_energy_cbls = function(csv, params){
   #csv    = wave_depth_cbls_csv
   #params = plot_energy_params$wave
   
-  d = read_csv(csv) %>%
+  d = read_csv(csv) %>% # .$territory %>% # TODO: caption on Atlantic Islands dropping
+    
+    # read_csv(csv) %>% filter(territory %in% ter_atl_islands)
     filter(
       !is.na(territory),
       territory != 'ALL',
@@ -131,7 +147,7 @@ get_tbl_energy_cbls = function(csv, params){
     ungroup() %>%
     arrange(territory, energy) %>%
     select(territory, energy, area_km2, cable2_km2, cable3_km2, cable2_pct, cable3_pct, pct_lbl)
-  
+
   d
 }
 
@@ -440,11 +456,11 @@ Operation and maintenance of submarine cables may conflict with marine renewable
 
 We applied industry-advised safety buffers (‘setback’ distances) to map the areas where the cable industry is a stakeholder. This was done using two setback widths: a twice-depth (‘2z’) buffer for new "facilities", and a three-times depth (‘3z’) for new "cables" to prevent overlap of bights for newly spliced cable material. Both of these buffers have a minimum 500 m buffer on either side. Of the original `r accounting(lns_km, digits=0)` km of cable in the "NOAA Charted Submarine cables in the United States as of December 2012" dataset (Figure \@ref(fig:mapCableTerritories)), `r accounting(lns_d1x_km, digits=0)` km fell within the 200 nm of the US exclusive economic zone (EEZ), which was analyzed across `r length(unique(lns_d1x$territory))` territories that overlapped with the cables (Figure \@ref(fig:mapCableTerritories)). The cable buffer area ranged from `r hi = usa_dx %>% arrange(desc(cable3_pct)) %>% head(1); hi$cable3_pct %>% percent()` (`r hi$cable3_km2 %>% accounting(digits=0)` km^2^ [3z] of `r hi$area_km2 %>% accounting(digits=0)` km^2^ total) along the `r hi$territory` owing to many cables present and the steep continental shelf, to virtually nill `r lo = usa_dx %>% arrange(cable3_pct) %>% head(1); lo$cable2_pct %>% percent()` (`r lo$cable2_km2 %>% accounting(digits=0)` km^2^ [2z] of `r lo$area_km2 %>% accounting(digits=0)` km^2^ total) in the `r lo$territory` (Table 2).
 
-Overlap of cable buffers with marine renewable energy was assessed for tidal [@haas_assessment_2011], wave [@Jacobson_Hagerman_Scott_2011] and wind [@schwartz_assessment_2010a] energy based on energy resource characterizations available through the National Renewable Energy Lab (NREL) Wind Prospector^[NREL Wind Prospector: https://maps.nrel.gov/wind-prospector/] or MHK Atlas^[NREL MHK Atlas: https://maps.nrel.gov/mhk-atlas]. Assessment of overlap with the advised seperation schemes and energy resource was limited to maximum depths based on current assessment of technology limitations : < 100 m for tidal [@haas_assessment_2011],  < 200 m  for wave [@Jacobson_Hagerman_Scott_2011],  < 1,000 m for wind [@musial_2016_2016]. The lowest energy classes were also dropped from the assessment (tidal: > 500 $W/m^2$, wave: > 10 $kW/m$, wind: > 7 $m/s$) viable for energy development.
+Overlap of cable buffers with marine renewable energy was assessed for tidal [@haas_assessment_2011], wave [@Jacobson_Hagerman_Scott_2011] and wind [@schwartz_assessment_2010a] energy based on energy resource characterizations available through the National Renewable Energy Lab (NREL) Wind Prospector^[NREL Wind Prospector: https://maps.nrel.gov/wind-prospector/] or MHK Atlas^[NREL MHK Atlas: https://maps.nrel.gov/mhk-atlas]. Assessment of overlap with the advised separation schemes and energy resource was limited to maximum depths based on current assessment of technology limitations : < 100 m for tidal [@haas_assessment_2011],  < 200 m  for wave [@Jacobson_Hagerman_Scott_2011],  < 1,000 m for wind [@musial_2016_2016]. The lowest energy classes were also dropped from the assessment (tidal: > 500 $W/m^2$, wave: > 10 $kW/m$, wind: > 7 $m/s$) viable for energy development.
 
 Total area of viable tidal resource (1,671 $km^2$) is orders of magnitude less than wave (378,908 $km^2$) or wind (462,613 $km^2$) owing to requirements for channelized bathymetry (Table 2). Nationally, tidal energy has up to 3.8% overlap, wave 0.9% and wind 4% (Table 2), so conflict between viable marine renewable energy resource and existing submarine cables is generally minimal. However a small fraction of viable resource areas in high energy areas is notable. For instance, for the small area (207 $km^2$) of highest wind speeds (11-12 m/s) occurring only in Hawaii overlap is up to 37.9% (Table 6). The lowest tidal energy class (500 - 1,000 $W/m^2$) in the West region (11 $km^2$), largely around Puget Sound, has 31.5% overlap (Table 4). The report provides a detailed breakdown of overlap with energy resource by depth, energy class and territory.
 
-Energy resources are unevenly distributed across territories. Tidal power (Figure \@ref(fig:pltTide), Table 4) is most abundant in Alaska (691 $km^2$ at 500 - 1,000 $W/m^2$), the East (390 $km^2$ at 500 - 1,000 $W/m^2$) and the West (46 $km^2$ at 500 - 1,000 $W/m^2$), which is where overlap with cable buffers is most significant (23.4 - 31.5%) such as around Port Townsend, WA (Figure \@ref(fig:mapTideWest)). Wave energy (Figure \@ref(fig:pltWave), Table 5) is most abundant in the Pacific territories having the most exposure to storm activity across the largest ocean. Alaska has the most abundant energy across all viable energy classes. Wind speeds (Figure \@ref(fig:pltWind), Table 6) in excess of 9 $m/s$ are not found in the Gulf of Mexico and limited to the offshore New England area of the East (Figure \@ref(fig:mapWindEast)), offshore areas of California and Oregon in the West (Figure \@ref(fig:mapWindEast)) and dispersed locations in Hawaii (Figure \@ref(fig:mapWindEast)).
+Energy resources are unevenly distributed across territories. Tidal power (Table 4) is most abundant in Alaska (691 $km^2$ at 500 - 1,000 $W/m^2$), the East (390 $km^2$ at 500 - 1,000 $W/m^2$) and the West (46 $km^2$ at 500 - 1,000 $W/m^2$), which is where overlap with cable buffers is most significant (23.4 - 31.5%) such as around Port Townsend, WA (Figure \@ref(fig:mapTideWest)). Wave energy (Table 5) is most abundant in the Pacific territories having the most exposure to storm activity across the largest ocean. Alaska has the most abundant energy across all viable energy classes. Wind speeds (Table 6) in excess of 9 $m/s$ are not found in the Gulf of Mexico and limited to the offshore New England area of the East (Figure \@ref(fig:mapWindEast)), offshore areas of California and Oregon in the West (Figure \@ref(fig:mapWindEast)) and dispersed locations in Hawaii (Figure \@ref(fig:mapWindEast)).
 
 The proposed avoidance areas for submarine cables should be deemed advisory. Overlap with the new facility (3z) or cable (2z) buffers around existing submarine cables does not nullify the possibility of renewable energy development there. Rather, it should alert the developer to negotiate reasonable terms with the cable operator via contacting the cable industry, such as the North American Submarine Cable Association^[North American Submarine Cable Association (NASCA): https://www.n-a-s-c-a.org] or the International Cable Protection Committee^[International Cable Protection Committee (ICPC): https://www.iscpc.org]. These avoidance zones are advised according to traditional methods of submarine cable repair involving grappling of the submarine cable and buoying to the surface for repair, hence allowance for sway of boat as a function of depth. In future, use of more sophisticated remotely operated vehicles may narrow safe operating distances. These avoidance areas are limited to the most recent submarine cable data. Any planning for marine renewable energy should consult the latest electronic navigation charts and contact the cable industry for confirmation.
 
@@ -456,7 +472,7 @@ The analysis is done in terms of resource area because the task of quantifying a
 
 The submarine cable industry handles 95% of inter-continental internet, data and voice traffic [@communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014], and is thus vital to the US and global economy. Repair and maintenance of cables traditionally involves grappling the cable and floating it to the surface, so allowance for drift of the repairing vessel and laying down of the additional splice of cable is depedent on bottom depth. Although submarine cable locations are publicly accessible through electronic navigation charts, a clear understanding of the areas where cable paths compete with promising marine energy sites does not yet exist.
 
-The submarine cable industry handles 95% of inter-continental internet, data and voice traffic [@communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014], and is thus vital to the US and global economy. Repair and maintenance of cables traditionally involves grappling the cable and floating it to the surface, so allowance for drift of the repairing vessel and laying down of the additional splice of cable is depedent on bottom depth (Figure \@ref(fig:figSubmarineCableRepair).
+The submarine cable industry handles 95% of inter-continental internet, data and voice traffic [@communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014], and is thus vital to the US and global economy. Repair and maintenance of cables traditionally involves grappling the cable and floating it to the surface, so allowance for drift of the repairing vessel and laying down of the additional splice of cable is depedent on bottom depth (Figure \@ref(fig:figSubmarineCableRepair)).
 
 ```{r figSubmarineCableRepair, fig.cap='Ship operations for submarine cable repair. The ship runs a grapnel along the seafloor to catch the cable before the break, recovers and buoys one end of the cable, grapples and recovers the other, and splices a new section of repaired cable before laying it back onto the seafloor. Source: Tyco Electronics Subsea Communications, LLC', echo=F}
 knitr::include_graphics('figs/cable-repair-process.png')
@@ -470,7 +486,7 @@ Although submarine cable locations are publicly accessible through several publi
 
 The study area consisted of the US waters [@flandersmarineinstitute_maritime_2016], i.e. the 200 nm extent deemed the exclusive economic zone (EEZ). We used the most comprehensive publicly available submarine cable dataset "NOAA Charted Submarine cables in the United States as of December 2012" available through MarineCadastre.gov ^[MarineCadastre.gov cable metadata: https://coast.noaa.gov/dataservices/Metadata/TransformMetadata?u=https://coast.noaa.gov/data/Documents/Metadata/harvest/MarineCadastre/NOAAChartedSubmarineCables.xml&f=html]. The contiguous US is further divided to yield the following anlytical territories: Alaska, Hawaii, West coast, East coast, Gulf of Mexico, Puerto Rico, US Virgin Islands and Pacific Islands (Guam, Johnston Atoll, N. Mariana Islands, Palmyra Atoll and Wake Island). The Gulf of Mexico description based on the International Hydrographic Organization (IHO) Sea Areas [@vliz_iho_2017] was used to seperate the original Atlantic US territory into East coast and Gulf of Mexico. To accomodate territories overlapping the international dateline (Hawaii and Alaska), all input and output products were shifted from [-180,180] to [0,360] longitude space. The original 12 territories and cable dataset are depicted on a map (Figure \@ref(fig:mapCableTerritories)) before extraction of cables within the area of the 7 analyzed territories (after lumping the Pacific Islands) within the US EEZ (Table 1).
 
-```{r mapCableTerritories, fig.cap='Map of NOAA charted submarine cables (red lines) as of December 2012 within the exclusive economic zone (EEZ; 200 nm) overlapping with United States territories.'}
+```{r mapCableTerritories, fig.cap='Map of NOAA charted submarine cables (red lines) as of December 2012 within the exclusive economic zone (EEZ; 200 nm) overlapping with United States territories. Note throughout the rest of the report that some territories are grouped: Pacific Island territories (Guam, Johnston Atoll, N. Mariana Islands, Palmyra Atoll, Wake Island) and Atlantic Island territories (Puerto Rico, US Virgin Islands).', fig.width=7, fig.height=3.5}
 fig = 'figs/mapCableTerritories' # redo=T
 fig_ext = sprintf('%s.%s', fig, fig_type) # redo=T
 if (!file.exists(fig_ext) | redo){
@@ -520,7 +536,13 @@ if (!file.exists(fig_ext) | redo){
 knitr::include_graphics(fig_ext, auto_pdf=F, dpi=fig_dpi)
 ```
 
+Bathymetric depth, using the [GEBCO 30 arc-second grid](http://www.gebco.net/data_and_products/gridded_bathymetry_data/gebco_30_second_grid/)^[GEBCO_2014 Grid, version 20150318, www.gebco.net] [@weatherall_new_2015], was used to extract the depth of the cables and energy resource characterizations.
+
+The marine renewable energy datasets from NREL are accessible online via NREL's Wind Prospector^[NREL Wind Prospector: https://maps.nrel.gov/wind-prospector/] and MHK Atlas^[NREL MHK Atlas: https://maps.nrel.gov/mhk-atlas]. Tidal data were modeled using the Regional Ocean Modeling System and calibrated with available measurements of tidal current speed and water level surface in terms of watts per square meter (W/m^2^) [@haas_assessment_2011]. Wave data is based on a 51-month Wavewatch III hindcast database developed by the National Oceanographic and Atmospheric Administration’s (NOAA’s) National Centers for Environmental Prediction for estimation of wave power density in terms of kilowatts per meter (kW/m) [@Jacobson_Hagerman_Scott_2011]. Wind data is for average offshore wind speed in meters per second (m/s) at a 90 m hub height ^[Wind data for 90-meter offshore: http://www.nrel.gov/gis/data_wind.html] [@schwartz_assessment_2010a].
+
 ```{r tbl01Territories}
+caption = HTML('Table 1: Territories having submarine cables within the United States exclusive economic zone (EEZ) of 200 nm. Territory area (km<sup>2</sup>) and length of submarine cables (km) are reported with horizontal indicator bars proportional to values in rest of column (with italics headers). Remaining columns indicate whether energy resources (tidal, wave or wind) are characterized for the territory. The Pacific Island territories (Guam, Johnston Atoll, N. Mariana Islands, Palmyra Atoll, Wake Island) have submarine cables but no energy resource characterization, whereas the Atlantic Island territories (Puerto Rico, US Virgin Islands) have tidal and wind.')
+
 # territories with energy
 ter_energy = map2(
   c(tide_depth_cbls_csv, wave_depth_cbls_csv, wind_depth_cbls_csv), 
@@ -543,84 +565,95 @@ ter_cables = read_sf(lns_d1x_rgn_geo) %>%
   summarize(
     length=sum(length, na.rm=T))
 
-# Pacific Island territories: lump those without any energy
-ter_other = setdiff(ter_cables$territory, ter_energy$territory)
-# paste(ter_other, collapse=', ') # Guam, Johnston Atoll, N Mariana Islands, Palmyra Atoll, Wake Island
-write_lines(ter_other, ter_other_txt)
-
-# ter_cables: summarize other 
-ter_cables = ter_cables %>%
-  filter(
-    !territory %in% ter_other) %>%
-  arrange(territory) %>%
-  bind_rows(
-    tibble(
-      territory = 'Pacific Islands',
-      length = ter_cables %>%
-        filter(
-          territory %in% ter_other) %>%
-        summarize(length=sum(length)) %>%
-        .$length)) %>%
-  mutate(length_km = length %>% as.numeric() / 1000) %>%
-  select(territory, length_km)
-#ter_order = ter_cables$territory
-
 # territory areas
-ter_area = read_sf(usa_rgn_s_geo) %>%
+ter_area = usa_eez %>%
   select(territory, area_km2) %>% 
-  st_set_geometry(NULL) %>%
-  arrange(territory)
-# ter_area: summarize Other
-ter_area = ter_area %>%
-  filter(
-    !territory %in% ter_other) %>%
-  bind_rows(
-    tibble(
-      territory = 'Pacific Islands',
-      area_km2 = ter_area %>%
-        filter(
-          territory %in% ter_other) %>%
-        summarize(area_km2=sum(area_km2)) %>%
-        .$area_km2))
-  
-ter_smry = ter_area %>%
+  st_set_geometry(NULL)
+
+# territory combined: area, cable, energy checks
+d_ter = ter_area %>%
   left_join(
     ter_cables, by='territory') %>%
   left_join(
     ter_energy, by='territory') %>%
   mutate(
-    length_km = accounting(round(length_km), format='d'),
-    area_km2  = accounting(round(area_km2), format='d'),
-    tide  = ifelse(!is.na(tide), '✓', ''),
-    wave  = ifelse(!is.na(wave), '✓', ''),
-    wind  = ifelse(!is.na(wind), '✓', '')) %>%
-  select(
-    Territory     = territory,
-    `Territory (km2)` = area_km2,
-    `Cable (km)`    = length_km,
-    `Tidal` = tide,
-    `Wave`  = wave,
-    `Wind`  = wind)
+    territory1 = territory,
+    territory = ifelse(
+      territory1 %in% ter_pac_islands, 
+      'Pacific Islands',
+      ifelse(
+        territory1 %in% ter_atl_islands, 
+        'Atlantic Islands',
+        territory1))) %>%
+  group_by(territory) %>%
+  summarize(
+   #territory1 = paste(territory1, collapse=', '),
+   area_km2   = sum(area_km2),
+   length_km  = sum(as.numeric(length)) / 1000,
+   tide = sum(tide, na.rm=F),
+   wave = sum(wave, na.rm=F),
+   wind = sum(wind, na.rm=F)) %>%
+  mutate(
+    tide = ifelse(!is.na(tide), '✓', ''),
+    wave = ifelse(!is.na(wave), '✓', ''),
+    wind = ifelse(!is.na(wind), '✓', ''))
 
-ter_smry %>%
-  arrange(Territory) %>%
-  formattable(list(
-    `Territory (km2)` = color_bar('lightgray'),
-    `Cable (km)`      = color_bar('lightgray'))) %>%
-  as.datatable(
-    rownames = F,
-    caption  = 'Table 1: Territories having submarine cables within the United States exclusive economic zone (EEZ) of 200 nm. Territory area (km2) and summed length of submarine cables (km) are reported with light gray horizontal bars to visually indicate value relative to rest of column. Remaining columns indicate whether energy resources (tidal, wave or wind) are characterized for the territory. The Pacific Island territories (Guam, Johnston Atoll, N. Mariana Islands, Palmyra Atoll, Wake Island) have submarine cables but no energy resource characterization.',
-    options  = list(
-      dom='t', # off: n_entries/search/paging/ordering
-      pageLength = nrow(tbl), ordering=F,
+d_ter = d_ter %>%
+  bind_rows(
+    # ALL summary
+    d_ter %>%
+      summarize(
+        territory = 'ALL',
+        area_km2  = sum(area_km2),
+        length_km = sum(length_km),
+        tide = '✓',
+        wave = '✓',
+        wind = '✓'))
+
+hdr = htmltools::withTags(table(
+  class = 'display',
+  thead(
+    tr(
+      th('Territory'),
+      th(HTML('<i>Territory (km<sup>2</sup>)</i>')),
+      th(HTML('<i>Cable (km)</i>')),
+      th('Tidal'),
+      th('Wave'),
+      th('Wind')))))
+
+d_ter %>%
+  mutate(
+  area_svg = sprintf(
+'<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="14px" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="14" fill="DarkGray"></rect>
+  <text text-anchor="end" x="100%%" y="11" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', area_km2 / max(area_km2) * 100, comma(round(area_km2))),
+  length_svg = sprintf(
+'<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="14px" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="14" fill="LightPink"></rect>
+  <text text-anchor="end" x="100%%" y="11" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', length_km / max(length_km) * 100, comma(round(length_km)))) %>% # ,
+  select(territory, area_svg, length_svg, tide, wave, wind) %>%
+  datatable(
+    escape = F,
+    rownames=F,
+    container=hdr,
+    caption=caption,    
+    options = list(
+      dom='t',
+      pageLength = nrow(d_ter), 
+      ordering=F,
+      autoWidth = TRUE,
       columnDefs = list(
-        list(className='dt-right', targets=0:2),
+        list(width = '130px', targets = c(1)),
+        list(width = '130px', targets = c(2)),
+        list(className='dt-right', targets=1:2),
         list(className='dt-center', targets=3:5))))
 ```
-
-Bathymetric depth, using the [GEBCO 30 arc-second grid](http://www.gebco.net/data_and_products/gridded_bathymetry_data/gebco_30_second_grid/)^[GEBCO_2014 Grid, version 20150318, www.gebco.net] [@weatherall_new_2015], was used to extract the depth of the cables and energy resource characterizations.
-
-The marine renewable energy datasets from NREL are accessible online via NREL's Wind Prospector^[NREL Wind Prospector: https://maps.nrel.gov/wind-prospector/] and MHK Atlas^[NREL MHK Atlas: https://maps.nrel.gov/mhk-atlas]. Tidal data were modeled using the Regional Ocean Modeling System and calibrated with available measurements of tidal current speed and water level surface in terms of watts per square meter (W/m^2^) [@haas_assessment_2011]. Wave data is based on a 51-month Wavewatch III hindcast database developed by the National Oceanographic and Atmospheric Administration’s (NOAA’s) National Centers for Environmental Prediction for estimation of wave power density in terms of kilowatts per meter (kW/m) [@Jacobson_Hagerman_Scott_2011]. Wind data is for average offshore wind speed in meters per second (m/s) at a 90 m hub height ^[Wind data for 90-meter offshore: http://www.nrel.gov/gis/data_wind.html] [@schwartz_assessment_2010a].
 
 ## Submarine Cable Avoidance Zones
 
@@ -655,14 +688,10 @@ In the spirit of reproducible research [@lowndes_our_2017; @madeyski_reproducibl
 Of the original `r accounting(lns_km, digits=0)` km of cable in the "NOAA Charted Submarine cables in the United States as of December 2012" dataset (Figure \@ref(fig:mapCableTerritories)), `r accounting(lns_d1x_km, digits=0)` km fell within the 200 nm of the US exclusive economic zone (EEZ), which was analyzed across `r length(unique(lns_d1x$territory))` territories that overlapped with the cables (Figure \@ref(fig:mapCableTerritories)). The cable buffer area ranged from `r hi = usa_dx %>% arrange(desc(cable3_pct)) %>% head(1); hi$cable3_pct %>% percent()` (`r hi$cable3_km2 %>% accounting(digits=0)` km^2^ [3z] of `r hi$area_km2 %>% accounting(digits=0)` km^2^ total) in the `r hi$territory` owing to many cables present and the steep continental shelf, to virtually nill `r lo = usa_dx %>% arrange(cable3_pct) %>% head(1); lo$cable2_pct %>% percent()` (`r lo$cable2_km2 %>% accounting(digits=0)` km^2^ [2z] of `r lo$area_km2 %>% accounting(digits=0)` km^2^ total) in `r lo$territory` (Table 2).
 
 ```{r tbl02CableBufferTerritories}
-caption  = "Table 2: Area of seperation schemes from submarine cables for new facilities (2 * depth) and new cables (3 * depth) as absolute area (km2) or as a percentage (%) of territory total area. Horizontal bars indicate value relative to rest of column. The Pacific Island territories (Guam, Johnston Atoll, N. Mariana Islands, Palmyra Atoll, Wake Island) have submarine cables but no energy resource characterization. ALL territories are summarized."
+caption  = HTML("Table 2: Area of cable separation schemes from submarine cables for new facilities (2 * depth; min.) and new cables (3 * depth; max.) as absolute area (km<sup>2</sup>) or as a percentage (%) of territory total area (before clipping to charecterized energy area or subsetting based on depth or energy class). Width of colored horizontal bars are noted by headers in italics and indicate value proportional to rest of column, which are most easily read first as area available (gray bar) and then percent maximum overlap (pink bar). ALL territories are summarized.")
 
-ter_other = read_lines(ter_other_txt)
-
-ter_tbl = usa_eez %>%
-  st_set_geometry(NULL)
-
-tbl = ter_tbl %>%
+tbl = usa_eez %>%
+  st_set_geometry(NULL) %>%
   left_join(
     dx2 %>% 
       st_set_geometry(NULL) %>%
@@ -676,227 +705,119 @@ tbl = ter_tbl %>%
       # sum across depths
       group_by(territory) %>%
       summarize(cable3_km2 = sum(area_km2)),
-    by='territory')
-
-tbl = tbl %>%
-  arrange(territory) %>%
-  filter(
-    !territory %in% ter_other) %>%
-  bind_rows(
-    bind_cols(
-      territory = 'Pacific Islands',
-      tbl %>%
-        filter(
-          territory %in% ter_other) %>%
-        summarize(
-          area_km2 = sum(area_km2),
-          cable2_km2 = sum(cable2_km2),
-          cable3_km2 = sum(cable3_km2)))) %>%
+    by='territory') %>%
   mutate(
-    cable2_pct = cable2_km2 / area_km2,
-    cable3_pct = cable3_km2 / area_km2) %>%
-  select(
-    territory, area_km2,
-    cable2_km2, cable2_pct, cable3_km2, cable3_pct)
+    territory1 = territory,
+    territory = ifelse(
+      territory1 %in% ter_pac_islands, 
+      'Pacific Islands',
+      ifelse(
+        territory1 %in% ter_atl_islands, 
+        'Atlantic Islands',
+        territory1))) %>%
+  group_by(territory) %>%
+  summarize(
+   #territory1 = paste(territory1, collapse=', '),
+   area_km2   = sum(area_km2),
+   cable2_km2 = sum(cable2_km2),
+   cable3_km2 = sum(cable3_km2)) %>%
+  ungroup()
 
-write_csv(tbl, usa_dx_csv)
-
+# rbind ALL
 tbl = tbl %>%
-  arrange(territory) %>%
   bind_rows(
     tbl %>%
       summarize(
-        area_km2 = sum(area_km2),
-        cable2_km2 = sum(cable2_km2),
-        cable3_km2 = sum(cable3_km2)) %>%
-      mutate(
         territory  = 'ALL',
-        cable2_pct = cable2_km2 / area_km2,
-        cable3_pct = cable3_km2 / area_km2))
+        area_km2   = sum(area_km2),
+        cable2_km2 = sum(cable2_km2),
+        cable3_km2 = sum(cable3_km2)))
 
-hdr = withTags(table(
+# cable*_pct
+tbl = tbl %>%
+  mutate(
+    cable2_pct = cable2_km2 / area_km2,
+    cable3_pct = cable3_km2 / area_km2)
+
+write_csv(tbl, usa_dx_csv)
+
+hdr = htmltools::withTags(table(
   class = 'display',
   thead(
     tr(
-      th(colspan=2, 'Territory'),
-      th(colspan=2, 'Facilities (2z)'),
-      th(colspan=2, 'Cables (3z)')),
-    tr(
-      th('Name'),
-      th(HTML('Area (km<sup>2</sup>)')),
-      th(HTML('Area (km<sup>2</sup>)')),
-      th('(%)'),
-      th(HTML('Area (km<sup>2</sup>)')),
-      th('(%)')))))
+      th(rowspan=2, 'Territory'),
+      th(rowspan=2, HTML('<i>Area (km<sup>2</sup>)</i>')),
+      th(colspan=2, 'Overlap with Cable Separation'),
+      tr(
+        th(HTML('Min. - Max. km<sup>2</sup> (Min. - <i>Max. %</i>)')))))))
 
-tbl %>%
+# tbl0 = tbl
+tbl = tbl %>%
   mutate(
-    area_km2   = accounting(area_km2, digits=0),
-    cable2_km2 = accounting(cable2_km2, digits=0),
-    cable3_km2 = accounting(cable3_km2, digits=0),
-    cable2_pct = percent(cable2_km2 / area_km2, digits=1),
-    cable3_pct = percent(cable3_km2 / area_km2, digits=1)) %>%
-  formattable(
-    list(
-      area_km2   = color_bar('lightgray'),
-      cable2_pct = color_bar('lightpink'),
-      cable3_pct = color_bar('lightgreen'))) %>%
-  as.datatable(
-    rownames=F, container=hdr, caption=caption,
-    options = list(
-      dom='t', # off: n_entries/search/paging/ordering
-      pageLength = nrow(tbl), ordering=F,
-      columnDefs = list(list(className='dt-right', targets=1:5))))
+    o_2z_km2 = comma(round(cable2_km2)),
+    o_3z_km2 = comma(round(cable3_km2)),
+    o_2z_pct = sprintf('%0.1f', cable2_pct*100),
+    o_3z_pct = sprintf('%0.1f', cable3_pct*100),
+    overlap = sprintf(
+      # get sprintf for padding with spaces
+      sprintf(
+        '%%%ds - %%%ds (%%%ds - %%%ds%%%%)',
+        max(nchar(o_2z_km2)),
+        max(nchar(o_3z_km2)),
+        max(nchar(o_2z_pct)),
+        max(nchar(o_3z_pct))),
+      o_2z_km2, 
+      o_3z_km2,
+      o_2z_pct, 
+      o_3z_pct),
+    overlap     = str_replace_all(overlap, ' ', '&nbsp;'),
+    overlap_svg = sprintf(
+      '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="16" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="16" fill="Pink"></rect>
+  <text text-anchor="end" x="100%%" y="14" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', cable3_pct*100, overlap),
+area_svg = sprintf(
+  '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="14px" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="14" fill="DarkGray"></rect>
+  <text text-anchor="end" x="100%%" y="11" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', area_km2 / max(area_km2) * 100, comma(round(area_km2))))
+
+tbl = tbl %>%
+  select(territory, area_svg, overlap_svg)
+
+datatable(
+  data = tbl,
+  escape = F,
+  rownames=F,
+  container=hdr,
+  caption=caption,    
+  options = list(
+    dom='t',
+    pageLength = nrow(tbl), 
+    ordering=F,
+    autoWidth = TRUE,
+    columnDefs = list(
+      list(width = '100px', targets = c(1)),
+      list(width = '300px', targets = c(2)),
+      list(className='dt-right', targets=1:2))))
 ```
 
 ## Overlap of Cable Buffer with Renewable Energy
 
-Overlap of cable buffers with marine renewable energy was assessed for tidal [@haas_assessment_2011], wave [@Jacobson_Hagerman_Scott_2011] and wind [@schwartz_assessment_2010a] energy based on energy resource characterizations available through the National Renewable Energy Lab (NREL) Wind Prospector^[NREL Wind Prospector: https://maps.nrel.gov/wind-prospector/] or MHK Atlas^[NREL MHK Atlas: https://maps.nrel.gov/mhk-atlas]. Assessment of overlap with the advised seperation schemes and energy resource was limited to maximum depths based on current assessment of technology limitations: < 100 m for tidal [@haas_assessment_2011],  < 200 m  for wave [@Jacobson_Hagerman_Scott_2011],  < 1,000 m for wind [@musial_2016_2016]. The lowest energy classes were also dropped from the assessment (tidal: > 500 $W/m^2$, wave: > 10 $kW/m$, wind: > 7 $m/s$) viable for energy development.
+Overlap of cable buffers with marine renewable energy was assessed for tidal [@haas_assessment_2011], wave [@Jacobson_Hagerman_Scott_2011] and wind [@schwartz_assessment_2010a] energy based on energy resource characterizations available through the National Renewable Energy Lab (NREL) Wind Prospector^[NREL Wind Prospector: https://maps.nrel.gov/wind-prospector/] or MHK Atlas^[NREL MHK Atlas: https://maps.nrel.gov/mhk-atlas]. Assessment of overlap with the advised separation schemes and energy resource was limited to maximum depths based on current assessment of technology limitations: < 100 m for tidal [@haas_assessment_2011],  < 200 m  for wave [@Jacobson_Hagerman_Scott_2011],  < 1,000 m for wind [@musial_2016_2016]. The lowest energy classes were also dropped from the assessment (tidal: > 500 $W/m^2$, wave: > 10 $kW/m$, wind: > 7 $m/s$) viable for energy development.
 
 Total area of viable tidal resource (1,671 $km^2$) is orders of magnitude less than wave (378,908 $km^2$) or wind (462,613 $km^2$) owing to requirements for channelized bathymetry (Table 3). Nationally, tidal energy has up to 3.8% overlap, wave 0.9% and wind 4% (Table 3), so conflict between viable marine renewable energy resource and existing submarine cables is generally minimal. However a small fraction of viable resource areas in high energy areas is notable. For instance, for the small area (207 $km^2$) of highest wind speeds (11-12 m/s) occurring only in Hawaii overlap is up to 37.9% (Table 6). The lowest tidal energy class (500 - 1,000 $W/m^2$) in the West region (11 $km^2$), largely around Puget Sound, has 31.5% overlap (Table 4).
 
-Viable tidal resource (Figure \@ref(fig:pltEnergy)) have up to 4.7% overlap for the lowest energy class (500 - 1,000 $W/m^2$) with only 2.3% and 0.9% overlap at higher power classes 1,000 - 1,500 and > 1,500 $W/m^2$ respectively. Wave energy at either depth bin of 0 - 100 or 100 - 200 m is very low with at most 2% overlap for the lower energy class (10-20 $kW/m$) at depths 100 - 200 m. The most abundant viable wind in shallow depth (0 - 100 m) and lower energy (7 - 8 and 8 - 9 $m/s$) overlaps at most 3.1%, but overlaps more at higher speeds (9.6% at 9 - 10 $m/s$) and in deeper waters (7.8% and 10.5% at 7 - 8 and 8 - 9 $m/s$ respectively in depths 200 - 1,000 m). Small areas at the highest wind speeds > 10 $m/s$ overlap up to 42.1% for the deepest bin (200 - 1,000 m) and highest wind speeds (11 - 12 $m/s$).
+Viable tidal resource (Table 3) have up to 4.7% overlap for the lowest energy class (500 - 1,000 $W/m^2$) with only 2.3% and 0.9% overlap at higher power classes 1,000 - 1,500 and > 1,500 $W/m^2$ respectively. Wave energy at either depth bin of 0 - 100 or 100 - 200 m is very low with at most 2% overlap for the lower energy class (10-20 $kW/m$) at depths 100 - 200 m. The most abundant viable wind in shallow depth (0 - 100 m) and lower energy (7 - 8 and 8 - 9 $m/s$) overlaps at most 3.1%, but overlaps more at higher speeds (9.6% at 9 - 10 $m/s$) and in deeper waters (7.8% and 10.5% at 7 - 8 and 8 - 9 $m/s$ respectively in depths 200 - 1,000 m). Small areas at the highest wind speeds > 10 $m/s$ overlap up to 42.1% for the deepest bin (200 - 1,000 m) and highest wind speeds (11 - 12 $m/s$).
 
-Energy resources are unevenly distributed across territories. Tidal power (Figure \@ref(fig:pltTide), Table 4) is most abundant in Alaska (691 $km^2$ at 500 - 1,000 $W/m^2$), the East (390 $km^2$ at 500 - 1,000 $W/m^2$) and the West (46 $km^2$ at 500 - 1,000 $W/m^2$), which is where overlap with cable buffers is most significant (23.4 - 31.5%) such as around Port Townsend, WA (Figure \@ref(fig:mapTideWest)). Wave energy (Figure \@ref(fig:pltWave), Table 5) is most abundant in the Pacific territories having the most exposure to storm activity across the largest ocean. Alaska has the most abundant energy across all viable energy classes. Wind speeds (Figure \@ref(fig:pltWind), Table 6) in excess of 9 $m/s$ are not found in the Gulf of Mexico and limited to the offshore New England area of the East (Figure \@ref(fig:mapWindEast)), offshore areas of California and Oregon in the West (Figure \@ref(fig:mapWindEast)) and dispersed locations in Hawaii (Figure \@ref(fig:mapWindEast)).
-
-```{r pltEnergy, fig.cap='Area of energy classes per depth bin across forms of characterized energy resource (tidal, wave and wind) for all US territories with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Overlap of new cables buffer (3z) is inclusive of the new facilities buffer (2z) so the height of the bar represents total area for the energy class. Assessed area of overlap with energy resource characterization is limited to a maximum depth (tidal: < 100 m; wave: < 200 m; wind: < 1000 m) and minimum energy classes (tidal: > 500 $W/m^2$; wave: > 10 $kW/m$; wind > 7 $m/s$) for viable renewable energy development.'}
-
-tbl_form_cbls = map2(
-  c(tide_depth_cbls_csv, wave_depth_cbls_csv, wind_depth_cbls_csv), 
-  c('tide','wave','wind'),
-  ~ read_csv(.x) %>% mutate(form = .y)) %>%
-  bind_rows() %>% # View(tbl_form_cbls)
-  rename(
-    depth  = depth_factor,
-    energy = energy_factor) %>%
-  filter(
-    territory == 'ALL',
-    # remove depths
-    !depth %in% c('<0','>1,000'),
-    # remove depths relevant to energy
-    (form=='tide' & depth %in% c('0-100')) |
-    (form=='wave' & depth %in% c('0-100','100-200')) |
-    (form=='wind' & depth %in% c('0-100','100-200','200-1,000')),
-    # remove lowest energy classes
-    !(form=='tide' & energy == '0-500'),
-    !(form=='wave' & energy == '0-10'),
-    !(form=='wind' & energy == '<=7')) %>%
-  select(form, energy, depth, area_km2, cable2_km2, cable3_km2, cable2_pct, cable3_pct)
-write_csv(tbl_form_cbls, tbl_form_cbls_csv)
-
-p_lbl = tbl_form_cbls %>%
-  mutate(
-    lbl     = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100)) %>%
-  select(form, energy, depth, lbl, area_km2)
-
-p_df = tbl_form_cbls %>%
-  mutate(
-    min_2d  = cable2_km2,
-    rec_3d  = cable3_km2 - cable2_km2,
-    rem     = area_km2 - cable3_km2) %>% 
-  select(
-    form, energy, depth, min_2d, rec_3d, rem) %>%
-  gather(type, km2, -form, -energy, -depth) %>%
-  mutate(
-    depth = factor(depth, depth_labels, ordered=T),
-    type  = factor(
-      type,
-      names(cable_ord),
-      cable_ord, ordered=T)) %>%
-  arrange(form, energy, depth, type)
-
-p_df_tide = p_df %>% 
-  filter(form == 'tide', depth == '0-100') %>%
-  mutate(
-    energy = factor(energy, tide_labels, ordered=T))
-p_lbl_tide = p_lbl %>%
-  filter(form == 'tide') %>%
-  mutate(
-    energy = factor(energy, tide_labels, ordered=T),
-    type   = NA)
-
-# tide ----
-p_tide = ggplot(
-  data = p_df_tide,
-  aes(x = energy, y = km2/1000, fill=type)) +
-  geom_col() +
-  geom_text(
-    data=p_lbl_tide,
-    aes(x = energy, y = area_km2/1000, label=lbl), vjust=-0.5, size=2.5) +
-  labs(
-    x='Tidal power (W/m^2)', y='Area (1,000 km^2)', fill='Overlap') +
-  theme(
-    legend.justification = c(1,1), 
-    #legend.position      = c(1,1)) +
-    legend.position      = 'none') +
-  expand_limits(y = 1.3) +
-  facet_wrap(~depth, labeller = label_both)
-
-# wave ----
-p_df_wave = p_df %>% 
-  filter(form == 'wave') %>%
-  mutate(
-    energy = factor(energy, wave_labels, ordered=T))
-p_lbl_wave = p_lbl %>%
-  filter(form == 'wave') %>%
-  mutate(
-    energy = factor(energy, wave_labels, ordered=T),
-    type   = NA)
-
-p_wave = ggplot(
-  data = p_df_wave,
-  aes(x = energy, y = km2/1000, fill=type)) +
-  geom_col() +
-  geom_text(
-    data=p_lbl_wave,
-    aes(x = energy, y = area_km2/1000, label=lbl), vjust=-0.5, size=1.8) +
-  labs(
-    x='Wave energy (kW/m)', y='Area (1,000 km^2)', fill='Overlap') +
-  theme(
-    legend.justification = c(1,1), 
-    legend.position      = c(1,1)) +
-  expand_limits(y = 700) +
-  facet_wrap(~depth, labeller = label_both)
-
-# wind ----
-#wind_labels2 = c('<=7','7-8','8-9','9-10','>10')
-p_df_wind = p_df %>% 
-  filter(form == 'wind') %>%
-  mutate(
-    energy = factor(energy, wind_labels, ordered=T))
-p_lbl_wind = p_lbl %>%
-  filter(form == 'wind') %>%
-  mutate(
-    lbl = sprintf('%s : %s', comma(round(area_km2)), lbl),
-    energy = factor(energy, wind_labels, ordered=T),
-    type   = NA)
-
-p_wind = ggplot(
-  data = p_df_wind,
-  aes(x = energy, y = km2/1000, fill=type)) +
-  geom_col() +
-  geom_text(
-    data=p_lbl_wind,
-    #aes(x = energy, y = area_km2/1000, label=lbl), vjust=-0.5) +
-    aes(x = energy, y = 75, label=lbl), angle=90, size=2.5) + #, vjust='bottom') +
-  labs(
-    x='Wind speed (m/s)', y='Area (1,000 km^2)', fill='Overlap') +
-  theme(
-    legend.justification = c(1,1), 
-    #legend.position      = c(1,1)) +
-    legend.position      = 'none') +
-  facet_wrap(~depth, labeller = label_both)
-
-library(gridExtra)
-grid.arrange(
-  p_tide, p_wave, p_wind,
-  layout_matrix = rbind(
-    c(1,2),
-    c(3,3)))
-```
+Energy resources are unevenly distributed across territories. Tidal power (Table 4) is most abundant in Alaska (691 $km^2$ at 500 - 1,000 $W/m^2$), the East (390 $km^2$ at 500 - 1,000 $W/m^2$) and the West (46 $km^2$ at 500 - 1,000 $W/m^2$), which is where overlap with cable buffers is most significant (23.4 - 31.5%) such as around Port Townsend, WA (Figure \@ref(fig:mapTideWest)). Wave energy (Table 5) is most abundant in the Pacific territories having the most exposure to storm activity across the largest ocean. Alaska has the most abundant energy across all viable energy classes. Wind speeds (Table 6) in excess of 9 $m/s$ are not found in the Gulf of Mexico and limited to the offshore New England area of the East (Figure \@ref(fig:mapWindEast)), offshore areas of California and Oregon in the West (Figure \@ref(fig:mapWindEast)) and dispersed locations in Hawaii (Figure \@ref(fig:mapWindEast)).
 
 ```{r tbl03Energy}
-caption = 'Table 3: Area of energy classes per depth bin across forms of energy resource characterization (tidal, wave and wind) with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Assessed area of overlap with energy resource characterization is limited to a maximum depth (tidal: < 100 m; wave: < 200 m; wind: < 1000 m) and minimum energy classes (tidal: > 500 $W/m^2$; wave: > 10 $kW/m$; wind > 7 $m/s$) for viable renewable energy development. Summaries across ALL depth and energy bins are provided for each form of energy. Width of colored bars indicate value relative to rest of column.'
+caption = HTML('Table 3: Area of energy classes per depth bin across forms of energy resource characterization (tidal, wave and wind) with percent overlap by horizontal safety separation scheme from existing submarine cables for new facilities (2 * depth; min.) and new cables (3 * depth; max.). Assessed area of overlap with energy resource characterization is limited to a maximum depth (tidal: < 100 m; wave: < 200 m; wind: < 1000 m) and minimum energy classes (tidal: > 500 W/m<sup>2</sup>; wave: > 10 kW/m; wind > 7 m/s) for viable renewable energy development. Summaries across ALL depth and energy bins are provided for each form of energy. Width of colored horizontal bars are noted by headers in italics and indicate value proportional to rest of column, which are most easily read first as area available (gray bar) and then percent maximum overlap (pink bar).')
 
 depth_levels  = c('','0-100','100-200','200-1,000','ALL')
 energy_levels = c(
@@ -909,7 +830,7 @@ energy_levels = c(
 tbl = read_csv(tbl_form_cbls_csv) %>%
   mutate(
     form = recode(form,
-      'tide' = 'Tidal (W/m2)',
+      'tide' = 'Tidal (W/m<sup>2</sup>)',
       'wave' = 'Wave (kW/m)',
       'wind' = 'Wind (m/s)')) %>%
   select(
@@ -968,6 +889,7 @@ d = d %>%
       labels = energy_labels,
       ordered=T))
   
+
 hdr = htmltools::withTags(table(
   class = 'display',
   thead(
@@ -975,105 +897,105 @@ hdr = htmltools::withTags(table(
       th(rowspan=2, 'Form'),
       th(rowspan=2, 'Energy'),
       th(rowspan=2, 'Depth (m)'),
-      th(rowspan=2, HTML('Area (km<sup>2</sup>)')),
-      th(colspan=2, 'Facilities (2z)'),
-      th(colspan=2, 'Cable (3z)')),
+      th(rowspan=2, HTML('<i>Area (km<sup>2</sup>)</i>')),
+      th(colspan=2, 'Overlap with Cable Separation'),
     tr(
-      th(HTML('Area (km<sup>2</sup>)')),
-      th('(%)'),
-      th(HTML('Area (km<sup>2</sup>)')),
-      th('(%)')))))
+      th(HTML('Min. - Max. km<sup>2</sup> (Min. - <i>Max. %</i>)')))))))
 
-# id=DataTables_Table_0 - Requested unknown parameter '7' for row 0, column 7. For more information about this error, please see http://datatables.net/tn/4
-
-d = d %>%
+#d = read_csv('test_tbl3-energy.csv')
+d %>%
   mutate(
-    area_km2   = accounting(area_km2, digits=0),
-    cable2_km2 = accounting(cable2_km2, digits=0),
-    cable3_km2 = accounting(cable3_km2, digits=0),
-    cable2_pct = percent(cable2_pct, digits=1),
-    cable3_pct = percent(cable3_pct, digits=1)) %>%
-  select(
-    form, energy, depth, area_km2,
-    cable2_km2, cable2_pct, cable3_km2, cable3_pct)
-
-d_f = d %>%
-  formattable(
-    list(
-      #depth      = color_bar('lightgray'),
-      #energy     = color_bar('lightblue'),
-      area_km2   = color_bar('lightgray'),
-      cable2_pct = color_bar('lightpink'),
-      cable3_pct = color_bar('lightgreen')))
-
-d_f %>%
-  as.datatable(
-    rownames=F, container=hdr, caption=caption,
+    o_2z_km2 = comma(round(cable2_km2)),
+    o_3z_km2 = comma(round(cable3_km2)),
+    o_2z_pct = sprintf('%0.1f', cable2_pct*100),
+    o_3z_pct = sprintf('%0.1f', cable3_pct*100),
+    overlap = sprintf(
+      # get sprintf for padding with spaces
+      sprintf(
+        '%%%ds - %%%ds (%%%ds - %%%ds%%%%)',
+        max(nchar(o_2z_km2)),
+        max(nchar(o_3z_km2)),
+        max(nchar(o_2z_pct)),
+        max(nchar(o_3z_pct))),
+      o_2z_km2, 
+      o_3z_km2,
+      o_2z_pct, 
+      o_3z_pct),
+    overlap     = str_replace_all(overlap, ' ', '&nbsp;'),
+    overlap_pct = sprintf(
+'<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="16" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="16" fill="Pink"></rect>
+  <text text-anchor="end" x="100%%" y="14" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', cable3_pct*100, overlap),
+    area_km2 = sprintf(
+'<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="14px" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="14" fill="DarkGray"></rect>
+  <text text-anchor="end" x="100%%" y="11" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', area_km2 / max(area_km2) * 100, comma(round(area_km2)))) %>% # ,
+  select(form, energy, depth, area_km2, overlap_pct) %>%
+  datatable(
+    escape = F,
+    rownames=F,
+    container=hdr,
+    caption=caption,    
     options = list(
-      dom='t', # off: n_entries/search/paging/ordering
-      pageLength = nrow(d), ordering=F,
-      columnDefs = list(list(className='dt-right', targets=1:7))))
+      dom='t',
+      pageLength = nrow(d), 
+      ordering=F,
+      autoWidth = TRUE,
+      columnDefs = list(
+        list(width = '80px', targets = c(3)),
+        list(width = '240px', targets = c(4)),
+        list(className='dt-right', targets=1:4))))
 ```
 
 ### Tidal
-
-```{r pltTide, fig.cap='Area of tidal power classes ($W/m^2$) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Overlap of new cables buffer (3z) is inclusive of the new facilities buffer (2z) so the height of the bar represents total area for the energy class. Assessed area of overlap with tidal energy resource characterization is limited to a maximum depth (< 100 m) and minimum energy classes (> 500 $W/m^2$) for viable tidal energy development.'}
-plot_cbls(
-  csv    = tide_depth_cbls_csv, 
-  params = plot_energy_params$tide)
-```
 
 ```{r tbl04Tide}
 fmt_tbl(
   csv        = tide_depth_cbls_csv, 
   params     = plot_energy_params$tide,
   energy_hdr = 'Tidal power (W/m<sup>2</sup>)',
-  caption    = 'Table 4: Area of tidal power classes (W/m2) per US territory with percent overlap of safety seperation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 100 m) and minimum energy classes (> 500 W/m2) for viable tidal energy development.')
+  caption    = HTML('Table 4: Area of tidal power classes (W/m2) per US territory with percent overlap of safety separation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 100 m) and minimum energy classes (> 500 W/m<sup>2</sup>) for viable tidal energy development. The Atlantic Islands (Puerto Rico, US Virgin Islands) only contained the lowest tidal energy class (< 500 W/m<sup>2</sup>) within the prescribed area so do not show up in this table despite having tidal energy resource characterized.'))
 ```
 
 ### Wave
-
-```{r pltWave, fig.cap='Area of wave energy classes ($kW/m$) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Overlap of new cables buffer (3z) is inclusive of the new facilities buffer (2z) so the height of the bar represents total area for the energy class. Assessed area is limited to a maximum depth (> 200 m) and minimum energy classes (> 10 $kW/m$) for viable wave energy development.'}
-plot_cbls(
-  csv    = wave_depth_cbls_csv, 
-  params = plot_energy_params$wave)
-  # legend_position      = c(1,0.3),
-  # legend_justification = c(1,1))
-```
 
 ```{r tbl05Wave}
 fmt_tbl(
   csv        = wave_depth_cbls_csv, 
   params     = plot_energy_params$wave,
   energy_hdr = 'Wave Energy (kW/m)',
-  caption    = 'Table 5: Area of wave energy classes (kW/m) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 200 m) and minimum energy classes (> 10 kW/m) for viable wave energy development.')
+  caption    = 'Table 5: Area of wave energy classes (kW/m) per US territory with percent overlap of horizontal safety separation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 200 m) and minimum energy classes (> 10 kW/m) for viable wave energy development. The Atlantic Islands (Puerto Rico, US Virgin Islands) only contained the lowest wave energy class (< 10 kW/m) within the prescribed area so do not show up in this table despite having wave energy resource characterized.')
 ```
 
 ### Wind
-
-```{r pltWind, fig.cap='Area of wind speed classes ($m/s$) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 \\* depth) and new cables (3 \\* depth). Overlap of new cables buffer (3z) is inclusive of the new facilities buffer (2z) so the height of the bar represents total area for the energy class. Assessed area is limited to a maximum depth (< 1,000 m) and minimum energy classes (> 7 $m/s$) for viable wind energy development.'}
-plot_cbls(
-  csv    = wind_depth_cbls_csv, 
-  params = plot_energy_params$wind)
-```
 
 ```{r tbl06Wind}
 fmt_tbl(
   csv        = wind_depth_cbls_csv, 
   params     = plot_energy_params$wind,
   energy_hdr = 'Wind Speed (m/s)',
-  caption    = 'Table 6: Area of wind speed classes (m/s) per US territory with percent overlap of horizontal safety seperation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 1,000 m) and minimum energy classes (> 7 m/s) for viable wind energy development.')
+  caption    = 'Table 6: Area of wind speed classes (m/s) per US territory with percent overlap of horizontal safety separation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 1,000 m) and minimum energy classes (> 7 m/s) for viable wind energy development.')
 ```
 
-# Conclusions
+# Discussion
+
+Besides the [Marine Cadastre](http://marinecadastre.gov) national marine spatial planning effort coordinated by NOAA and BOEM, other ocean regional planning efforts recognize submarine cables in their data catalogs: [Mid-Atlantic Regional Ocean Council (MARCO)](http://midatlanticocean.org) portal (New York, New Jersey, Delaware, Maryland and Virginia); [Northeast Regional Ocean Council (NROC)](http://northeastoceancouncil.org/) portal (Maine, New Hampshire, Vermont, Massachusetts, Rhode Island, and Connecticut); [Governors’ South Atlantic Alliance (GSAA)](http://southatlanticalliance.org/) portal (North Carolina, South Carolina, Georgia and Florida); [Gulf of Mexico Alliance](http://www.gulfofmexicoalliance.org/) portal (Florida, Alabama, Mississippi, Louisiana and Texas); and [West Coast Ocean Partnership](http://www.westcoastoceans.org/) (Washington, Oregon and California).
+
+Although the US currently only has one marine renewable energy facility in full production at Block Island NJ, many more are in pilot and proposal phases^[BOEM Renewable Energy Programs state activities: https://www.boem.gov/Renewable-Energy-State-Activities/] with much future potential [@beiter_assessment_2017; @lehmann_ocean_2017a; @uihlein_wave_2016]. The Virginia Wind Energy Area (WEA) offshore from Virginia Beach currently has five proposed/ongoing offshore wind related activites with some potential for conflict given three submarine cables ready for service in the near future, discoverable via [SubmarineCableMap.com](http://submarinecablemap.com): MAREA (Q1 2018), Midgardsormen (Q2 2019), BRUSA (Q2 2018). In New York the Interior Department auctioned nearly 80,000 acres offshore for commercial wind energy development in December, 2016. New Jersey has 2 renewable energy leases signed by BOEM as of February, 2016. In Massachusetts, BOEM approved the site assessment plan for a lease with Bay State Wind in June of 2017 and is in process with another offshore lease between Statoil Wind and PNE Wind with bids recieved in January, 2017. In Rhode Island, besides the existing Block Island wind facility in production, BOEM is reviewing a site assessment plan for the North Lease Area recieved from Deepwater Wind April of 2016. In Delaware on December of 2016 BOEM approved the assignemnt of an offshore wind lease to GSOE I. In Oregon, Oregon State University's Northwest National Marine Renewable Energy Center is in the permitting phase to develop the South Energy Test Site (SETS) facility for testing wave energy converters (WECs). In California, a competitive bidding process is underway between Trident Winds and Statoil Wind for an offshore area near Morro Bay. In Hawaii, BOEM is in the area identification stage of the leasing process for two call areas north and south of Oahu.
+
+## Conclusion
 
 Given climate change impacts of fossil fuel energy production [@pachauri_climate_2015], development of clean renewable energy alternatives are imperative for the sustainable future of the United States and rest of the planet. These energy sources however vary widely in geographic and temporal availability and may compete with other uses. The submarine cable industry provides critical power and telecommunication services, such that safe operation and maintenance must be heeded as marine renewable energy sources are developed [@communicationssecurityreliabilityandinteroperabilitycounciliv_clustering_2016; @communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014]. The submarine cable safety avoidance zones created and evaluated through this report are products intended to minimize conflict at the plannnig stage between these competing uses.
 
-Besides the [Marine Cadastre](http://marinecadastre.gov] national marine spatial planning effort coordinated by NOAA and BOEM, other ocean regional planning efforts recognize submarine cables in their data catalogs: [Mid-Atlantic Regional Ocean Council (MARCO)](http://midatlanticocean.org) portal (New York, New Jersey, Delaware, Maryland and Virginia); [Northeast Regional Ocean Council (NROC)](http://northeastoceancouncil.org/) portal (Maine, New Hampshire, Vermont, Massachusetts, Rhode Island, and Connecticut); [Governors’ South Atlantic Alliance (GSAA)](http://southatlanticalliance.org/) portal (North Carolina, South Carolina, Georgia and Florida); [Gulf of Mexico Alliance](http://www.gulfofmexicoalliance.org/) portal (Florida, Alabama, Mississippi, Louisiana and Texas); and [West Coast Ocean Partnership](http://www.westcoastoceans.org/) (Washington, Oregon and California).
-
-Although the US currently only has one marine renewable energy facility in full production at Block Island NJ, many more are in pilot and proposal phases^[BOEM Renewable Energy Programs state activities: https://www.boem.gov/Renewable-Energy-State-Activities/) with much future potential [@beiter_assessment_2017; @lehmann_ocean_2017a; @uihlein_wave_2016]. The Virginia Wind Energy Area (WEA) offshore from Virginia Beach currently has five proposed/ongoing offshore wind related activites with some potential for conflict given three submarine cables ready for service in the near future, discoverable via [SubmarineCableMap.com](http://submarinecablemap.com): MAREA (Q1 2018), Midgardsormen (Q2 2019), BRUSA (Q2 2018). In New York the Interior Department auctioned nearly 80,000 acres offshore for commercial wind energy development in December, 2016. New Jersey has 2 renewable energy leases signed by BOEM as of February, 2016. In Massachusetts, BOEM approved the site assessment plan for a lease with Bay State Wind in June of 2017 and is in process with another offshore lease between Statoil Wind and PNE Wind with bids recieved in January, 2017. In Rhode Island, besides the existing Block Island wind facility in production, BOEM is reviewing a site assessment plan for the North Lease Area recieved from Deepwater Wind April of 2016. In Delaware on December of 2016 BOEM approved the assignemnt of an offshore wind lease to GSOE I. In Oregon, Oregon State University's Northwest National Marine Renewable Energy Center is in the permitting phase to develop the South Energy Test Site (SETS) facility for testing wave energy converters (WECs). In California, a competitive bidding process is underway between Trident Winds and Statoil Wind for an offshore area near Morro Bay. In Hawaii, BOEM is in the area identification stage of the leasing process for two call areas north and south of Oahu.
-
 The proposed avoidance areas for submarine cables should be deemed advisory. Overlap with the new facility (3z) or cable (2z) buffers around existing submarine cables does not nullify the possibility of renewable energy development there. Rather, it should alert the developer to negotiate reasonable terms with the cable operator via contacting the cable industry, such as the North American Submarine Cable Association^[North American Submarine Cable Association (NASCA): https://www.n-a-s-c-a.org] or the International Cable Protection Committee^[International Cable Protection Committee (ICPC): https://www.iscpc.org]. These avoidance zones are advised according to traditional methods of submarine cable repair involving grappling of the submarine cable and buoying to the surface for repair, hence allowance for sway of boat as a function of depth. In future, use of more sophisticated remotely operated vehicles may narrow safe operating distances. These avoidance areas are limited to the most recent submarine cable data. Any planning for marine renewable energy should consult the latest electronic navigation charts and contact the cable industry for confirmation.
+
+Overlap between existing submarine cables and viable marine renewable energy sources is generally minimal (maximum 3.8% for tidal, 0.9% for wave and 4.0% for wind; Table 3) meaning the two industries are generally compatible into the future. Specific high energy areas already noted, such as Puget Sound for tidal, Oregon for wave, and Oahu for wind, do exist and may inevitably conflict with future plans (eg planned cables and wind energy areas in Virginia Beach), however reasonable terms for operation and maintenance are negotiable. This new spatial seperation scheme from existing submarine cables serves to alert developers so such negotiations can be an early part of the planning process.
 
 \newpage
 
@@ -1090,37 +1012,37 @@ opts_chunk$set(cache=T, fig.width=7, fig.height=7, fig_dpi=300)
 
 ### Alaska
 
-```{r mapTideAlaska, fig.cap='Map of tidal power ($W/m^2$) in Alaska with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapTideAlaska, fig.cap='Map of tidal power ($W/m^2$) in Alaska with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_tide('Alaska')
 ```
 
 ### East
 
-```{r mapTideEast, fig.cap='Map of tidal power ($W/m^2$) in the East with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapTideEast, fig.cap='Map of tidal power ($W/m^2$) in the East with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_tide('East')
 ```
 
 ### Gulf of Mexico
 
-```{r mapTideGulfofMexico, fig.cap='Map of tidal power ($W/m^2$) in the Gulf of Mexico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapTideGulfofMexico, fig.cap='Map of tidal power ($W/m^2$) in the Gulf of Mexico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_tide('Gulf of Mexico')
 ```
 
 ### Puerto Rico
 
-```{r mapTidePuertoRico, fig.cap='Map of tidal power ($W/m^2$) in Puerto Rico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapTidePuertoRico, fig.cap='Map of tidal power ($W/m^2$) in Puerto Rico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_tide('Puerto Rico')
 ```
 
 ### US Virgin Islands
 
-```{r mapTideUSVirginIslands, fig.cap='Map of tidal power ($W/m^2$) in the US Virgin Islands with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapTideUSVirginIslands, fig.cap='Map of tidal power ($W/m^2$) in the US Virgin Islands with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_tide('US Virgin Islands')
 ```
 
 ### West
 
-```{r mapTideWest, fig.cap='Map of tidal power ($W/m^2$) in the West with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapTideWest, fig.cap='Map of tidal power ($W/m^2$) in the West with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_tide('West')
 ```
 
@@ -1141,43 +1063,43 @@ wave_sf = read_sf(wave_geo) %>%
 
 ### Alaska
 
-```{r mapWaveAlaska, fig.cap='Map of wave energy ($kW/m$) in Alaska with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWaveAlaska, fig.cap='Map of wave energy ($kW/m$) in Alaska with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wave_sf, 'Alaska', 'Wave<br>energy (kW/m)')
 ```
 
 ### East
 
-```{r mapWaveEast, fig.cap='Map of wave energy ($kW/m$) in the East with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWaveEast, fig.cap='Map of wave energy ($kW/m$) in the East with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wave_sf, 'East', 'Wave<br>energy (kW/m)')
 ```
 
 ### Gulf of Mexico
 
-```{r mapWaveGulfofMexico, fig.cap='Map of wave energy ($kW/m$) in the Gulf of Mexico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWaveGulfofMexico, fig.cap='Map of wave energy ($kW/m$) in the Gulf of Mexico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wave_sf, 'Gulf of Mexico', 'Wave<br>energy (kW/m)')
 ```
 
 ### Hawaii
 
-```{r mapWaveHawaii, fig.cap='Map of wave energy ($kW/m$) in Hawaii with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWaveHawaii, fig.cap='Map of wave energy ($kW/m$) in Hawaii with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wave_sf, 'Hawaii', 'Wave<br>energy (kW/m)')
 ```
 
 ### Puerto Rico
 
-```{r mapWavePuertoRico, fig.cap='Map of wave energy ($kW/m$) in Puerto Rico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWavePuertoRico, fig.cap='Map of wave energy ($kW/m$) in Puerto Rico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wave_sf, 'Puerto Rico', 'Wave<br>energy (kW/m)')
 ```
 
 ### US Virgin Islands
 
-```{r mapWaveUSVirginIslands, fig.cap='Map of wave energy ($kW/m$) in the US Virgin Islands with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWaveUSVirginIslands, fig.cap='Map of wave energy ($kW/m$) in the US Virgin Islands with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wave_sf, 'US Virgin Islands', 'Wave<br>energy (kW/m)')
 ```
 
 ### West
 
-```{r mapWaveWest, fig.cap='Map of wave energy ($kW/m$) in the West with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWaveWest, fig.cap='Map of wave energy ($kW/m$) in the West with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wave_sf, 'West', 'Wave<br>energy (kW/m)')
 ```
 
@@ -1198,29 +1120,27 @@ wind_sf = read_sf(wind_geo) %>%
 
 ### East
 
-```{r mapWindEast, fig.cap='Map of wind speed ($m/s$) in the East with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWindEast, fig.cap='Map of wind speed ($m/s$) in the East with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wind_sf, 'East', 'Wind<br>speed (m/s)')
 ```
 
 ### Gulf of Mexico
 
-```{r mapWindGulfofMexico, fig.cap='Map of wind speed ($m/s$) in the Gulf of Mexico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWindGulfofMexico, fig.cap='Map of wind speed ($m/s$) in the Gulf of Mexico with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wind_sf, 'Gulf of Mexico', 'Wind<br>speed (m/s)')
 ```
 
 ### Hawaii
 
-```{r mapWindHawaii, fig.cap='Map of wind speed ($m/s$) in Hawaii with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWindHawaii, fig.cap='Map of wind speed ($m/s$) in Hawaii with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wind_sf, 'Hawaii', 'Wind<br>speed (m/s)')
 ```
 
 ### West
 
-```{r mapWindWest, fig.cap='Map of wind speed ($m/s$) in the West with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal seperation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
+```{r mapWindWest, fig.cap='Map of wind speed ($m/s$) in the West with submarine cables (black lines) and advisory buffers colored by bottom depth. The buffers are plotted with transparency so the inner more opaque band represents the advised horizontal separation scheme for new facilities (2 \\* depth) and outer less opaque band the scheme for new cables (3 \\* depth). At large scales this detail is not visible. Alternatively, you can zoom and pan interactively on these layers at http://ecoquants.github.io/nrel-cables/maps.html.'}
 map_energy_sf(wind_sf, 'West', 'Wind<br>speed (m/s)')
 ```
-
-
 
 \newpage
 

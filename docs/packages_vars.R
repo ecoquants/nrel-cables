@@ -60,7 +60,6 @@ lns_d1x_kml   = '../data/lns_d1x.kml'
 land_usaeez_geo = '../data/land_wrld2_usaeez.geojson'
 dx2_depth_geo = sprintf('../data/buf_2xdepth_incr%sm_depth-binned.geojson', d_incr)
 dx3_depth_geo = sprintf('../data/buf_3xdepth_incr%sm_depth-binned.geojson', d_incr)
-ter_other_txt = '../data/territories_other.txt'
 
 # depth classes
 tbl_depth_reclass = tribble(
@@ -79,6 +78,8 @@ tide_labels = c('0-500','500-1,000','1,000-1,500','>1,500')
 wind_labels = c('<=7', '7-8', '8-9', '9-10', '10-11', '11-12')
 wave_labels = c('0-10','10-20','20-30','>30')
 cable_ord   = c('min_2d'='Facilities (2z)', 'rec_3d'='Cables (3z)', 'rem'='Free')
+ter_atl_islands = c('Puerto Rico','US Virgin Islands')
+ter_pac_islands = c('Guam','Johnston Atoll','N Mariana Islands','Palmyra Atoll','Wake Island')
 
 # extract_cable-energy.R paths ----
 # wind
@@ -129,3 +130,4 @@ plot_energy_params = list(
     energy_labels = wind_labels,
     depth_ranges  = c('0-100','100-200','200-1,000'),
     xlab          = "paste('Wind speed (', m/s,')')"))
+

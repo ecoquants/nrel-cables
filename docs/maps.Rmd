@@ -204,7 +204,47 @@ cbls2_180 = cbls2 %>%
 cbls3_180 = cbls3  %>%
     mutate(geometry = (geometry + c(360,90)) %% c(-360) - c(0,-360+90)) %>% 
     st_set_crs(crs_gcs)
+
+wave_sf = read_sf(wave_geo) %>%
+  filter(!is.na(territory)) %>%
+  mutate(
+    energy = factor(
+      x      = energy_lbl,
+      levels = wave_labels,
+      labels = wave_labels,
+      ordered = T)) %>%
+  select(-energy_num, -energy_lbl) %>%
+  arrange(territory, energy)
+
+wind_sf = read_sf(wind_geo) %>%
+    filter(!is.na(territory)) %>%
+    mutate(
+      energy = factor(
+        x      = energy_lbl,
+        levels = wind_labels,
+        labels = wind_labels,
+        ordered = T)) %>%
+    select(-energy_num, -energy_lbl, -region) %>%
+    arrange(territory, energy)
 ```
+
+# TODO:
+- rm cable depths < 0 m
+- bookdown
+  - By Energy
+  - By Region
+- [`leaflet.extras::addFullscreenControl()`](https://github.com/bhaskarvk/leaflet.extras/blob/master/R/fullscreen.R)
+- [`leaflet::addGraticule()`](https://github.com/rstudio/leaflet/blob/master/inst/examples/graticule.R)
+- [`leaflet.extras::addSearchGoogle()`](http://rpubs.com/bhaskarvk/leaflet-search)
+
+* [leaflet/easyButton.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/easyButton.R)
+* [leaflet/groupOptions.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/groupOptions.R)
+* [leaflet/highlight-polygons.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/highlight-polygons.R)
+* [leaflet/leaflet-measure.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/leaflet-measure.R)
+* [leaflet/minimap.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/minimap.R)
+* [leaflet/proj4Leaflet.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/proj4Leaflet.R)
+* [leaflet/simpleGraticule.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/simpleGraticule.R)
+
 
 # Tide
 
@@ -246,19 +286,6 @@ map_tide('West')
 
 # Wind
 
-```{r mapWind_data}
-wind_sf = read_sf(wind_geo) %>%
-    filter(!is.na(territory)) %>%
-    mutate(
-      energy = factor(
-        x      = energy_lbl,
-        levels = wind_labels,
-        labels = wind_labels,
-        ordered = T)) %>%
-    select(-energy_num, -energy_lbl, -region) %>%
-    arrange(territory, energy)
-```
-
 ## East
 
 ```{r}
@@ -284,19 +311,6 @@ map_energy_sf(wind_sf, 'West', 'Wind\nspeed\n(m/s)')
 ```
 
 # Wave
-
-```{r mapWave_data}
-wave_sf = read_sf(wave_geo) %>%
-  filter(!is.na(territory)) %>%
-  mutate(
-    energy = factor(
-      x      = energy_lbl,
-      levels = wave_labels,
-      labels = wave_labels,
-      ordered = T)) %>%
-  select(-energy_num, -energy_lbl) %>%
-  arrange(territory, energy)
-```
 
 ## Alaska
 
