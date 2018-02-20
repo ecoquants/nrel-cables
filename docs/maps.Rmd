@@ -11,6 +11,23 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, cache=F)
 
+# TODO:
+# - rm cable depths < 0 m
+# - bookdown
+#   - By Energy
+#   - By Region
+# - [`leaflet.extras::addFullscreenControl()`](https://github.com/bhaskarvk/leaflet.extras/blob/master/R/fullscreen.R)
+# - [`leaflet::addGraticule()`](https://github.com/rstudio/leaflet/blob/master/inst/examples/graticule.R)
+# - [`leaflet.extras::addSearchGoogle()`](http://rpubs.com/bhaskarvk/leaflet-search)
+# 
+# * [leaflet/easyButton.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/easyButton.R)
+# * [leaflet/groupOptions.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/groupOptions.R)
+# * [leaflet/highlight-polygons.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/highlight-polygons.R)
+# * [leaflet/leaflet-measure.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/leaflet-measure.R)
+# * [leaflet/minimap.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/minimap.R)
+# * [leaflet/proj4Leaflet.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/proj4Leaflet.R)
+# * [leaflet/simpleGraticule.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/simpleGraticule.R)
+
 # set working directory
 if (basename(getwd()) == 'nrel-cables') setwd('docs')
 
@@ -228,24 +245,6 @@ wind_sf = read_sf(wind_geo) %>%
     arrange(territory, energy)
 ```
 
-# TODO:
-- rm cable depths < 0 m
-- bookdown
-  - By Energy
-  - By Region
-- [`leaflet.extras::addFullscreenControl()`](https://github.com/bhaskarvk/leaflet.extras/blob/master/R/fullscreen.R)
-- [`leaflet::addGraticule()`](https://github.com/rstudio/leaflet/blob/master/inst/examples/graticule.R)
-- [`leaflet.extras::addSearchGoogle()`](http://rpubs.com/bhaskarvk/leaflet-search)
-
-* [leaflet/easyButton.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/easyButton.R)
-* [leaflet/groupOptions.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/groupOptions.R)
-* [leaflet/highlight-polygons.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/highlight-polygons.R)
-* [leaflet/leaflet-measure.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/leaflet-measure.R)
-* [leaflet/minimap.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/minimap.R)
-* [leaflet/proj4Leaflet.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/proj4Leaflet.R)
-* [leaflet/simpleGraticule.R at master · rstudio/leaflet](https://github.com/rstudio/leaflet/blob/master/inst/examples/simpleGraticule.R)
-
-
 # Tide
 
 ## Alaska
@@ -282,32 +281,6 @@ map_tide('US Virgin Islands')
 
 ```{r}
 map_tide('West')
-```
-
-# Wind
-
-## East
-
-```{r}
-map_energy_sf(wind_sf, 'East', 'Wind\nspeed\n(m/s)')
-```
-
-## Gulf of Mexico
-
-```{r}
-map_energy_sf(wind_sf, 'Gulf of Mexico', 'Wind\nspeed\n(m/s)')
-```
-
-## Hawaii
-
-```{r}
-map_energy_sf(wind_sf, 'Hawaii', 'Wind\nspeed\n(m/s)')
-```
-
-## West
-
-```{r}
-map_energy_sf(wind_sf, 'West', 'Wind\nspeed\n(m/s)')
 ```
 
 # Wave
@@ -352,4 +325,30 @@ map_energy_sf(wave_sf, 'US Virgin Islands', 'Wave\nenergy\n(kW/m)')
 
 ```{r}
 map_energy_sf(wave_sf, 'West', 'Wave\nenergy\n(kW/m)')
+```
+
+# Wind
+
+## East
+
+```{r}
+map_energy_sf(wind_sf, 'East', 'Wind\nspeed\n(m/s)')
+```
+
+## Gulf of Mexico
+
+```{r}
+map_energy_sf(wind_sf, 'Gulf of Mexico', 'Wind\nspeed\n(m/s)')
+```
+
+## Hawaii
+
+```{r}
+map_energy_sf(wind_sf, 'Hawaii', 'Wind\nspeed\n(m/s)')
+```
+
+## West
+
+```{r}
+map_energy_sf(wind_sf, 'West', 'Wind\nspeed\n(m/s)')
 ```
