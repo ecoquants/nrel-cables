@@ -120,6 +120,89 @@ area_svg = sprintf(
           list(className='dt-right', targets=1:3))))
 }
 
+fmt_tbl_3z = function(csv, params, energy_hdr, caption){
+
+  # csv = wave_depth_cbls_csv; params = plot_energy_params$wave; energy_hdr = 'Wave Energy (kW/m)'; caption = 'Table 5: Area overlap with cables for wave energy (kW/m) by territory.'
+  # csv = tide_depth_cbls_csv; params = plot_energy_params$tide
+  # energy_hdr = 'Tidal power (W/m<sup>2</sup>)'
+  # caption    = 'Table 4: Area of tidal power classes (W/m2) per US territory with percent overlap of safety separation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 100 m) and minimum energy classes (> 500 W/m2) for viable tidal energy development.'
+  
+  hdr = htmltools::withTags(table(
+    class = 'display',
+    thead(
+      tr(
+        th('Region'),
+        th(HTML(energy_hdr)),
+        th(HTML('Area (km<sup>2</sup>)')),
+        th(HTML('Cable Setback Area (km<sup>2</sup>) (%)'))))))
+  
+  d = get_tbl_energy_cbls(csv, params)
+  
+  d <- select(d, territory, energy, area_km2, cable3_km2, cable3_pct)
+  
+  d_rgn <- d %>%
+    group_by(territory) %>%
+    summarize(
+      area_km2   = sum(area_km2),
+      cable3_km2 = sum(cable3_km2)) %>%
+    mutate(
+      energy = "ALL",
+      cable3_pct = cable3_km2/area_km2)
+  
+  energy_levels <- levels(d$energy)
+  d <- d %>%
+    mutate(
+      energy = as.character(energy)) %>%
+    bind_rows(
+      d_rgn) %>%
+    mutate(
+      energy = factor(energy, c("ALL", energy_levels), ordered=T)) %>%
+    arrange(territory, energy)
+  
+  d %>%
+    mutate(
+      territory  = ifelse(duplicated(territory), '', territory),
+      o_3z_km2 = comma(round(cable3_km2)),
+      o_3z_pct = sprintf('%0.1f', cable3_pct*100),
+      overlap = sprintf(
+        # get sprintf for padding with spaces
+        sprintf(
+          '%%%ds (%%%ds%%%%)',
+          max(nchar(o_3z_km2)),
+          max(nchar(o_3z_pct))),
+        o_3z_km2,
+        o_3z_pct),
+      overlap     = str_replace_all(overlap, ' ', '&nbsp;'),
+      overlap_svg = sprintf(
+        '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="16" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="16" fill="Pink"></rect>
+  <text text-anchor="end" x="100%%" y="14" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', cable3_pct*100, overlap),
+area_svg = sprintf(
+  '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="14px" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="14" fill="DarkGray"></rect>
+  <text text-anchor="end" x="100%%" y="11" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', area_km2 / max(area_km2) * 100, comma(round(area_km2)))) %>% # ,
+    select(territory, energy, area_svg, overlap_svg) %>%
+    datatable(
+      escape = F,
+      rownames=F,
+      container=hdr,
+      caption=caption,    
+      options = list(
+        dom='t',
+        pageLength = nrow(d), 
+        ordering=F,
+        autoWidth = TRUE,
+        columnDefs = list(
+          list(width = '80px', targets = c(2)),
+          list(width = '240px', targets = c(3)),
+          list(className='dt-right', targets=1:3))))
+}
 get_tbl_energy_cbls = function(csv, params){
   
   #csv    = wave_depth_cbls_csv
@@ -470,8 +553,6 @@ Demand for abundant and diverse resources in the oceans is growing, necessitatin
 
 The analysis is done in terms of resource area because the task of quantifying actual impacts on available resource is a non-trivial undertaking that involves subjective decisions of identifying resource opportunities. Quantifying overlap in-terms of resource area—on the other hand—is significantly more straight forward, and useful to marine spatial planners. 
 
-The submarine cable industry handles 95% of inter-continental internet, data and voice traffic [@communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014], and is thus vital to the US and global economy. Repair and maintenance of cables traditionally involves grappling the cable and floating it to the surface, so allowance for drift of the repairing vessel and laying down of the additional splice of cable is dependent on bottom depth. Although submarine cable locations are publicly accessible through electronic navigation charts, a clear understanding of the areas where cable paths compete with promising marine energy sites does not yet exist.
-
 The submarine cable industry handles 95% of inter-continental internet, data and voice traffic [@communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014], and is thus vital to the US and global economy. Repair and maintenance of cables traditionally involves grappling the cable and floating it to the surface, so allowance for drift of the repairing vessel and laying down of the additional splice of cable is dependent on bottom depth (Figure \@ref(fig:figSubmarineCableRepair)).
 
 ```{r figSubmarineCableRepair, fig.cap='Ship operations for submarine cable repair. The ship runs a grapnel along the seafloor to catch the cable before the break, recovers and buoys one end of the cable, grapples and recovers the other, and splices a new section of repaired cable before laying it back onto the seafloor. Source: Tyco Electronics Subsea Communications, LLC', echo=F}
@@ -614,9 +695,9 @@ hdr = htmltools::withTags(table(
   class = 'display',
   thead(
     tr(
-      th('Territory'),
-      th(HTML('<i>Territory (km<sup>2</sup>)</i>')),
-      th(HTML('<i>Cable (km)</i>')),
+      th('Region'),
+      th(HTML('Region (km<sup>2</sup>)')),
+      th(HTML('Cable (km)')),
       th('Tidal'),
       th('Wave'),
       th('Wind')))))
@@ -806,6 +887,117 @@ datatable(
       list(className='dt-right', targets=1:2))))
 ```
 
+```{r tbl02CableBufferTerritories_3z}
+caption  = HTML("Table 2: Area of territories and cable setback within the EEZ. Width of horizontal gray bars indicate percent area relative to total area of U.S. EEZ, and pink bars indicate percent of given area overlapping with cable setback.")
+
+tbl = usa_eez %>%
+  st_set_geometry(NULL) %>%
+  left_join(
+    dx2 %>% 
+      st_set_geometry(NULL) %>%
+      # sum across depths
+      group_by(territory) %>%
+      summarize(cable2_km2 = sum(area_km2)),
+    by='territory') %>%
+  left_join(
+    dx3 %>% 
+      st_set_geometry(NULL) %>% 
+      # sum across depths
+      group_by(territory) %>%
+      summarize(cable3_km2 = sum(area_km2)),
+    by='territory') %>%
+  mutate(
+    territory1 = territory,
+    territory = ifelse(
+      territory1 %in% ter_pac_islands, 
+      'Pacific Islands',
+      ifelse(
+        territory1 %in% ter_atl_islands, 
+        'Atlantic Islands',
+        territory1))) %>%
+  group_by(territory) %>%
+  summarize(
+   #territory1 = paste(territory1, collapse=', '),
+   area_km2   = sum(area_km2),
+   cable2_km2 = sum(cable2_km2),
+   cable3_km2 = sum(cable3_km2)) %>%
+  ungroup()
+
+# rbind ALL
+tbl = tbl %>%
+  bind_rows(
+    tbl %>%
+      summarize(
+        territory  = 'ALL',
+        area_km2   = sum(area_km2),
+        cable2_km2 = sum(cable2_km2),
+        cable3_km2 = sum(cable3_km2)))
+
+# cable*_pct
+tbl = tbl %>%
+  mutate(
+    cable2_pct = cable2_km2 / area_km2,
+    cable3_pct = cable3_km2 / area_km2)
+
+write_csv(tbl, usa_dx_csv)
+
+# tbl0 = tbl
+tbl = tbl %>%
+  mutate(
+    o_3z_km2 = comma(round(cable3_km2)),
+    o_3z_pct = sprintf('%0.1f', cable3_pct*100),
+    overlap = sprintf(
+      # get sprintf for padding with spaces
+      sprintf(
+        '%%%ds (%%%ds%%%%)',
+        max(nchar(o_3z_km2)),
+        max(nchar(o_3z_pct))),
+      o_3z_km2,
+      o_3z_pct),
+    overlap     = str_replace_all(overlap, ' ', '&nbsp;'),
+    overlap_svg = sprintf(
+      '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="16" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="16" fill="Pink"></rect>
+  <text text-anchor="end" x="100%%" y="14" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', cable3_pct*100, overlap),
+area_svg = sprintf(
+  '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="14px" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="14" fill="DarkGray"></rect>
+  <text text-anchor="end" x="100%%" y="11" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', area_km2 / max(area_km2) * 100, comma(round(area_km2))))
+
+tbl = tbl %>%
+  select(territory, area_svg, overlap_svg)
+
+hdr = htmltools::withTags(table(
+  class = 'display',
+  thead(
+    tr(
+      th('Region'),
+      th(HTML('Area (km<sup>2</sup>)')),
+      th(HTML('Cable Setback Area (km<sup>2</sup>) (%)'))))))
+
+datatable(
+  data = tbl,
+  escape = F,
+  rownames=F,
+  container=hdr,
+  caption=caption,    
+  options = list(
+    dom='t',
+    pageLength = nrow(tbl), 
+    ordering=F,
+    autoWidth = F,
+    columnDefs = list(
+      list(width = '100px', targets = c(1)),
+      list(width = '200px', targets = c(2)),
+      list(className='dt-right', targets=1:2))))
+```
+
 ## Overlap of Cable Buffer with Renewable Energy
 
 Overlap of cable buffers with marine renewable energy was assessed for tidal [@haas_assessment_2011], wave [@Jacobson_Hagerman_Scott_2011] and wind [@schwartz_assessment_2010a] energy based on energy resource characterizations available through the National Renewable Energy Lab (NREL) Wind Prospector^[NREL Wind Prospector: https://maps.nrel.gov/wind-prospector/] or MHK Atlas^[NREL MHK Atlas: https://maps.nrel.gov/mhk-atlas]. Assessment of overlap with the advised separation schemes and energy resource was limited to maximum depths based on current assessment of technology limitations: < 100 m for tidal [@haas_assessment_2011],  < 200 m  for wave [@Jacobson_Hagerman_Scott_2011],  < 1,000 m for wind [@musial_2016_2016]. The lowest energy classes were also dropped from the assessment (tidal: > 500 $W/m^2$, wave: > 10 $kW/m$, wind: > 7 $m/s$) viable for energy development.
@@ -953,6 +1145,135 @@ d %>%
         list(className='dt-right', targets=1:4))))
 ```
 
+```{r tbl03Energy_3z}
+caption = HTML('Table 3: Area of energy and depth classes with overlap by cable setback, across all assessed energy resources. Assessed energy resource area is limited to a minimum viable energy class and maximum bottom depth (tidal: ≥ 500 W/m<sup>2</sup> & ≤ 100 m; wave: ≥ 10 kW/m & ≤ 200 m; wind ≥ 7 m/s & ≤ 1000 m). Summaries across ALL depth and energy bins are provided for each form of energy. Width of horizontal gray bars indicate percent area relative to maximum value, and pink bars indicate percent of given area overlapping with cable setback.')
+
+depth_levels  = c('','0-100','100-200','200-1,000','ALL')
+energy_levels = c(
+  '',
+  '7-8','500-1,000','10-20',
+  '8-9','1,000-1,500','20-30',
+  '9-10','>1,500','>30',
+  '10-11','11-12','ALL')
+
+tbl = read_csv(tbl_form_cbls_csv) %>%
+  mutate(
+    form = recode(form,
+      'tide' = 'Tidal (W/m<sup>2</sup>)',
+      'wave' = 'Wave (kW/m)',
+      'wind' = 'Wind (m/s)')) %>%
+  select(
+    form, energy, depth, area_km2,
+    cable2_km2, cable2_pct, cable3_km2, cable3_pct)
+
+tbl = tbl %>%
+  mutate(
+    energy = factor(energy, energy_levels, ordered=T),
+    depth  = factor(depth, depth_levels, ordered=T)) %>%
+  arrange(
+    form, energy, depth)
+
+tbl_smry = tbl %>%
+  group_by(form) %>%
+  # summarize across ALL viable depth and energy bins
+  summarize(
+    area_km2   = sum(area_km2),
+    cable2_km2 = sum(cable2_km2),
+    cable3_km2 = sum(cable3_km2)) %>%
+  mutate(
+    energy     = factor('ALL', energy_levels, ordered=T),
+    depth      = factor('ALL', depth_levels, ordered=T),
+    cable2_pct = cable2_km2 / area_km2,
+    cable3_pct = cable3_km2 / area_km2) %>%
+  ungroup() %>%
+  select(
+    form, energy, depth, area_km2,
+    cable2_km2, cable2_pct, cable3_km2, cable3_pct)
+
+tbl$form[duplicated(tbl$form)]     = ''
+tbl$energy[duplicated(tbl$energy)] = ''
+
+d = tbl_smry %>%
+  bind_rows(
+    tbl)
+
+# setup depth and energy as factors for showing horizontal indicator bars  
+if (length(setdiff(unique(d$energy), c('', energy_levels))) != 0) 
+  stop('whoah! expecting ALL d$energy in energy_levels')
+energy_labels = c(
+  '',
+  '7-8','500-1,000 ','10-20',
+  '8-9','1,000-1,500','20-30',
+  '9-10',' >1,500',' >30', # correct for odd flip of > w/ className='dt-right'
+  '10-11','11-12',
+  'ALL')
+
+d = d %>%
+  mutate(
+    depth = factor(
+      depth, depth_levels, ordered=T),
+    energy = factor(
+      energy, 
+      levels = energy_levels, 
+      labels = energy_labels,
+      ordered=T))
+  
+
+hdr = htmltools::withTags(table(
+  class = 'display',
+  thead(
+    tr(
+      th('Form'),
+      th('Energy'),
+      th('Depth (m)'),
+      th(HTML('Area (km<sup>2</sup>)')),
+      th(HTML('Cable Setback Area (km<sup>2</sup>) (%)'))))))
+
+#d = read_csv('test_tbl3-energy.csv')
+d %>%
+  mutate(
+    o_3z_km2 = comma(round(cable3_km2)),
+    o_3z_pct = sprintf('%0.1f', cable3_pct*100),
+    overlap = sprintf(
+      # get sprintf for padding with spaces
+      sprintf(
+        '%%%ds (%%%ds%%%%)',
+        max(nchar(o_3z_km2)),
+        max(nchar(o_3z_pct))),
+      o_3z_km2,
+      o_3z_pct),
+    overlap     = str_replace_all(overlap, ' ', '&nbsp;'),
+    overlap_pct = sprintf(
+'<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="16" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="16" fill="Pink"></rect>
+  <text text-anchor="end" x="100%%" y="14" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', cable3_pct*100, overlap),
+    area_km2 = sprintf(
+'<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="100%%" height="14px" preserveAspectRatio="xMaxYMin meet">
+<g>
+  <rect width="%0.1f%%" height="14" fill="DarkGray"></rect>
+  <text text-anchor="end" x="100%%" y="11" font-family="Courier New" font-size="14px" color="black">%s</text>
+</g>
+</svg>', area_km2 / max(area_km2) * 100, comma(round(area_km2)))) %>% # ,
+  select(form, energy, depth, area_km2, overlap_pct) %>%
+  datatable(
+    escape = F,
+    rownames=F,
+    container=hdr,
+    caption=caption,    
+    options = list(
+      dom='t',
+      pageLength = nrow(d), 
+      ordering=F,
+      autoWidth = TRUE,
+      columnDefs = list(
+        list(width = '80px', targets = c(3)),
+        list(width = '240px', targets = c(4)),
+        list(className='dt-right', targets=1:4))))
+```
+
 ### Tidal
 
 ```{r tbl04Tide}
@@ -963,6 +1284,14 @@ fmt_tbl(
   caption    = HTML('Table 4: Area of tidal power classes (W/m2) per US territory with percent overlap of safety separation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 100 m) and minimum energy classes (> 500 W/m<sup>2</sup>) for viable tidal energy development. The Atlantic Islands (Puerto Rico, US Virgin Islands) only contained the lowest tidal energy class (< 500 W/m<sup>2</sup>) within the prescribed area so do not show up in this table despite having tidal energy resource characterized.'))
 ```
 
+```{r tbl04Tide_3z}
+fmt_tbl_3z(
+  csv        = tide_depth_cbls_csv, 
+  params     = plot_energy_params$tide,
+  energy_hdr = 'Tidal power (W/m<sup>2</sup>)',
+  caption    = HTML('Table 4: Area of tidal power classes (W/m<sup>2</sup>) per region and overlap with cable setback. Assessed area, including ALL for region, is limited to a maximum depth (≤ 100 m) and minimum energy (≥ 500 W/m<sup>2</sup>) for viable tidal energy development. The Atlantic Islands (Puerto Rico, US Virgin Islands) only contained the lowest tidal energy class (< 500 W/m<sup>2</sup>) within the prescribed area so do not show up in this table despite having tidal energy resource characterized. Width of horizontal gray bars indicate percent area relative to maximum value, and pink bars indicate percent of given area overlapping with cable setback.'))
+```
+
 ### Wave
 
 ```{r tbl05Wave}
@@ -970,9 +1299,16 @@ fmt_tbl(
   csv        = wave_depth_cbls_csv, 
   params     = plot_energy_params$wave,
   energy_hdr = 'Wave Energy (kW/m)',
-  caption    = 'Table 5: Area of wave energy classes (kW/m) per US territory with percent overlap of horizontal safety separation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 200 m) and minimum energy classes (> 10 kW/m) for viable wave energy development. The Atlantic Islands (Puerto Rico, US Virgin Islands) only contained the lowest wave energy class (< 10 kW/m) within the prescribed area so do not show up in this table despite having wave energy resource characterized.')
+  caption    = 'Table 5: Area of wave energy classes (kW/m) per US territory with percent overlap of horizontal safety separation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Assessed area is limited to a maximum depth (< 200 m) and minimum energy classes (> 10 kW/m) for viable wave energy development. The Atlantic Islands (Puerto Rico, US Virgin Islands) only contained the lowest wave energy class (< 10 kW/m) within the prescribed area so do not show up in this table despite having wave energy resource characterized. Width of horizontal gray bars indicate percent area relative to maximum value, and pink bars indicate percent of given area overlapping with cable setback.')
 ```
 
+```{r tbl05Wave_3z}
+fmt_tbl_3z(
+  csv        = wave_depth_cbls_csv, 
+  params     = plot_energy_params$wave,
+  energy_hdr = 'Wave Energy (kW/m)',
+  caption    = 'Table 5: Area of wave energy classes (kW/m) per region and overlap with cable setback. Assessed area, including ALL for region, is limited to a maximum depth (≤ 200 m) and minimum energy (≥ 10 kW/m) for viable wave energy development. The Atlantic Islands (Puerto Rico, US Virgin Islands) only contained the lowest wave energy class (< 10 kW/m) within the prescribed area so do not show up in this table despite having wave energy resource characterized. Width of horizontal gray bars indicate percent area relative to maximum value, and pink bars indicate percent of given area overlapping with cable setback.')
+```
 ### Wind
 
 ```{r tbl06Wind}
@@ -983,6 +1319,14 @@ fmt_tbl(
   caption    = 'Table 6: Area of wind speed classes (m/s) per US territory with percent overlap of horizontal safety separation scheme from existing submarine cables for new facilities (2 * depth) and new cables (3 * depth). Width of colored bars indicate value relative to rest of column. Assessed area is limited to a maximum depth (< 1,000 m) and minimum energy classes (> 7 m/s) for viable wind energy development.')
 ```
 
+```{r tbl06Wind_3z}
+fmt_tbl_3z(
+  csv        = wind_depth_cbls_csv, 
+  params     = plot_energy_params$wind,
+  energy_hdr = 'Wind Speed (m/s)',
+  caption    = 'Table 6: Area of wind speed classes (m/s) per region and overlap with cable setback. Assessed area, including ALL for region, is limited to a maximum depth (≤ 1,000 m) and minimum energy classes (≥ 7 m/s) for viable wind energy development. Width of horizontal gray bars indicate percent area relative to maximum value, and pink bars indicate percent of given area overlapping with cable setback.')
+```
+
 # Discussion
 
 Besides the [Marine Cadastre](http://marinecadastre.gov) national marine spatial planning effort coordinated by NOAA and BOEM, other ocean regional planning efforts recognize submarine cables in their data catalogs: [Mid-Atlantic Regional Ocean Council (MARCO)](http://midatlanticocean.org) portal (New York, New Jersey, Delaware, Maryland and Virginia); [Northeast Regional Ocean Council (NROC)](http://northeastoceancouncil.org/) portal (Maine, New Hampshire, Vermont, Massachusetts, Rhode Island, and Connecticut); [Governors’ South Atlantic Alliance (GSAA)](http://southatlanticalliance.org/) portal (North Carolina, South Carolina, Georgia and Florida); [Gulf of Mexico Alliance](http://www.gulfofmexicoalliance.org/) portal (Florida, Alabama, Mississippi, Louisiana and Texas); and [West Coast Ocean Partnership](http://www.westcoastoceans.org/) (Washington, Oregon and California).
@@ -991,7 +1335,7 @@ Although the US currently only has one marine renewable energy facility in full 
 
 # Conclusion
 
-Marine renewable energy promises to be a large expanding section of the "blue economy" that rides on the wave of the "green economy" for creating new jobs and reducing dependence on foreign energy sources. In fact wind turbine technician is the single fastest growing occupation in America with 25,000 new jobs added last year to now be at over 100,000 workers nationally (Bureau of Labor Statistics 2017^[Bureau of Labor Statistics: https://www.bls.gov/ooh/fastest-growing.htm]). Decreasing dependency on foreign oil is critical to preventing future energy calamities such as the 1973 oil crisis in which an oil embargo to the U.S. was placed by the Organization of Arab Petroleum Exporting Countries (OAPEC) due to political actions related to supporting Israel. Furthermore, given the climate change impacts of fossil fuel energy production [@pachauri_climate_2015], development of clean renewable energy alternatives are imperative for the sustainable future of the United States and rest of the planet.
+Marine renewable energy promises to be a large expanding section of the "blue economy" that rides on the wave of the "green economy" for creating new jobs and reducing dependence on foreign energy sources. In fact wind turbine service technician is the single fastest growing occupation in America with 25,000 new jobs added last year to now be at over 100,000 workers nationally (Bureau of Labor Statistics 2017^[Bureau of Labor Statistics: https://www.bls.gov/ooh/fastest-growing.htm]). Decreasing dependency on foreign oil is critical to preventing future energy calamities such as the 1973 oil crisis in which an oil embargo to the U.S. was placed by the Organization of Arab Petroleum Exporting Countries (OAPEC) due to political actions related to supporting Israel. Furthermore, given the climate change impacts of fossil fuel energy production [@pachauri_climate_2015], development of clean renewable energy alternatives are imperative for the sustainable future of the United States and rest of the planet.
 
 These energy sources however vary widely in geographic and temporal availability and may compete with other uses. The submarine cable industry provides critical power and telecommunication services, such that safe operation and maintenance must be heeded as marine renewable energy sources are developed [@communicationssecurityreliabilityandinteroperabilitycounciliv_clustering_2016; @communicationssecurityreliabilityandinteroperabilitycounciliv_protection_2014]. The submarine cable safety avoidance zones created and evaluated through this report are products intended to minimize conflict at the planning stage between these competing uses.
 

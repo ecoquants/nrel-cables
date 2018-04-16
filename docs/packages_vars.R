@@ -1,7 +1,7 @@
 # load packages, installing if needed ----
 packages = c(
   # general data science
-  'tidyverse','stringr','units',
+  'tidyverse','stringr','units','here','glue',
   # dynamic document creation
   'knitr','rmarkdown','markdown','bookdown','DT','htmltools','formattable',
   # plotting & mapping
