@@ -1667,8 +1667,7 @@ recode_territory &lt;- function(d){
 
 buffer_gcs &lt;- function(x, b, wrap=T, crs=4326){
   # x = lns_cables_td$geometry[[1]]; b = set_units(200, ft); wrap = T
-  #browser()
-  
+
   bb &lt;- st_bbox(x)
   lat_range &lt;- extendrange(bb[c('ymin','ymax')], f=-1/6) # 5.796732 8.983678
   crs_aea &lt;- glue(&quot;+proj=aea +lat_1={lat_range[1]} +lat_2={lat_range[2]} +lat_0={mean(lat_range)} 
@@ -1682,11 +1681,11 @@ buffer_gcs &lt;- function(x, b, wrap=T, crs=4326){
   if (wrap) y &lt;- nrelutils::sf_wrap(y)
 
   y$geom
-  #browser()
 }
 
 geo_to_csv &lt;- function(geo){
   # geo = geos[1]
+  
   path_in  &lt;- glue(&quot;{dir_out}/{geo}&quot;)
   path_out &lt;- glue(&quot;{dir_out}/tables/{path_in %&gt;% basename() %&gt;% fs::path_ext_remove()}.csv&quot;)
   
@@ -1718,8 +1717,8 @@ lns_cables &lt;- read_sf(cables_geo)
 
 # depth
 if (!file.exists(depth_tif)){
-  r_depth &lt;- raster(depth_wrld_tif) %&gt;% # x: [0,360]
-    crop(cables_sf %&gt;% as(&quot;Spatial&quot;)) # x: [141,296]
+  r_depth &lt;- raster(depth_wrld_tif) %&gt;%
+    crop(cables_sf %&gt;% as(&quot;Spatial&quot;))
   r_depth[r_depth &lt; 0] &lt;- NA
   writeRaster(r_depth, depth_tif, overwrite=T)
 }
@@ -1785,8 +1784,7 @@ if (!file.exists(cables_td_geo)){
       TRUE ~ NA_character_)) %&gt;% 
     arrange(territory, depth_beg) %&gt;% 
     select(region=territory, depth_lbl, depth_beg, length_km)
-  #st_drop_geometry(lns_cables_td)
-  #file.remove(cables_td_geo)
+
   write_sf(lns_cables_td, cables_td_geo)
 }
 lns_cables_td &lt;- read_sf(cables_td_geo)
@@ -1799,8 +1797,7 @@ if (!file.exists(cables_td_geo)){
         unlist(recursive = F) %&gt;% 
         st_sfc(crs=4326),
       area_km2 = st_area(geometry) %&gt;% set_units(km^2))
-  #st_drop_geometry(ply_cables)
-  #file.remove(ply_cables_geo)
+
   write_sf(ply_cables, ply_cables_geo)
 }
 ply_cables &lt;- read_sf(ply_cables_geo)
@@ -1858,7 +1855,7 @@ if (!file.exists(tide_geo)){
     arrange(region, tide_beg) %&gt;% 
     mutate(
       area_km2 = st_area(geometry) %&gt;% set_units(km^2))
-  # st_drop_geometry(ply_tide) %&gt;% View()
+  
   write_sf(ply_tide, tide_geo)
 }
 ply_tide &lt;- read_sf(tide_geo)
@@ -1878,7 +1875,6 @@ if (!file.exists(wave_0_geo)){
   write_sf(ply_wave, wave_geo)
 }
 ply_wave &lt;- read_sf(wave_geo)
-#st_drop_geometry(ply_wave) %&gt;% View()
 
 # prep wind
 if (!file.exists(wind_0_geo)){
@@ -1907,7 +1903,6 @@ if (!file.exists(wind_0_geo)){
   write_sf(ply_wind, wind_geo)
 }
 ply_wind &lt;- read_sf(wind_geo)
-#st_drop_geometry(ply_wind)
 
 # intersect cables with energy ----
 
@@ -1923,7 +1918,6 @@ if (!file.exists(cables_tide_geo)){
   write_sf(ply_cables_tide, cables_tide_geo)
 }
 ply_cables_tide &lt;- read_sf(cables_tide_geo)
-#st_drop_geometry(ply_cables_tide)
 
 # wave x cables
 if (!file.exists(cables_wave_geo)){
@@ -1937,7 +1931,6 @@ if (!file.exists(cables_wave_geo)){
   write_sf(ply_cables_wave, cables_wave_geo)
 }
 ply_cables_wave &lt;- read_sf(cables_wave_geo)
-#st_drop_geometry(ply_cables_wave)
 
 # wind x cables
 if (!file.exists(cables_wind_geo)){
@@ -1951,7 +1944,6 @@ ply_cables_wind &lt;- ply_cables %&gt;%
   write_sf(ply_cables_wind, cables_wind_geo)
 }
 ply_cables_wind &lt;- read_sf(cables_wind_geo)
-#st_drop_geometry(ply_cables_wind)
 
 # geojson to csv ----
 dir_out &lt;- here(&quot;data/200ft&quot;)
@@ -2070,7 +2062,7 @@ tbl_es2 &lt;- read_csv(file.path(dir_tbl, &quot;energy-depth_3z.csv&quot;)) %&gt
     energy,
     viable_km2, viable_pct_eez,
     cable_km2, cable_pct_viable)
-#tbl_es2
+
 write_csv(tbl_es2, file.path(dir_tbl, &quot;table_ES-2.csv&quot;))
 
 tbl_es2 %&gt;% 
@@ -2290,7 +2282,7 @@ tbl_2 %&gt;%
     form, energy, depth,
     viable_km2, 
     cable_km2, cable_pct_viable)
-#tbl_3
+
 write_csv(tbl_3, file.path(dir_tbl, &quot;table_3.csv&quot;))
 
 tbl_3 %&gt;% 
@@ -2517,21 +2509,11 @@ energy resources.&quot;)</code></pre>
   group_by(region=territory, energy=energy_factor) %&gt;% 
   summarize(viable_km2 = sum(area_km2)) %&gt;% 
   ungroup() %&gt;% 
-  # mutate(
-  #   energy = recode(energy, `11-12`=&quot;&gt;11&quot;)) %&gt;% 
   left_join(
     read_csv(file.path(dir_tbl, &quot;cables_tide.csv&quot;)) %&gt;% 
       filter(depth_beg == 0, tide_beg &gt;= 500) %&gt;% 
       group_by(region, energy=tide_lbl) %&gt;% 
       summarize(cable_km2 = sum(area_km2)),
-    # read_csv(file.path(dir_tbl, &quot;cables_wave.csv&quot;)) %&gt;%
-    #   filter(depth_beg &lt;= 100, wave_beg &gt;= 10) %&gt;%
-    #   group_by(energy=wave_lbl, depth=depth_lbl) %&gt;%
-    #   summarize(cable_km2 = sum(area_km2)),
-    # read_csv(file.path(dir_tbl, &quot;cables_wind.csv&quot;)) %&gt;%
-    #   filter(depth_beg &lt;= 200, wind_beg &gt;= 7) %&gt;%
-    #   group_by(energy=wind_lbl, depth=depth_lbl) %&gt;%
-    #   summarize(cable_km2 = sum(area_km2)),
     by=c(&quot;region&quot;,&quot;energy&quot;)) %&gt;%
   mutate(
     cable_pct_viable = cable_km2 / viable_km2 * 100) %&gt;% 
@@ -2539,7 +2521,7 @@ energy resources.&quot;)</code></pre>
     region, energy,
     viable_km2, 
     cable_km2, cable_pct_viable)
-#tbl_4
+
 write_csv(tbl_4, file.path(dir_tbl, &quot;table_4.csv&quot;))
 
 tbl_4 %&gt;% 
@@ -2656,17 +2638,11 @@ tbl_4 %&gt;%
   group_by(region=territory, energy=energy_factor) %&gt;% 
   summarize(viable_km2 = sum(area_km2)) %&gt;% 
   ungroup() %&gt;% 
-  # mutate(
-  #   energy = recode(energy, `11-12`=&quot;&gt;11&quot;)) %&gt;% 
   left_join(
     read_csv(file.path(dir_tbl, &quot;cables_wave.csv&quot;)) %&gt;%
       filter(depth_beg &lt;= 100, wave_beg &gt;= 10) %&gt;%
       group_by(region, energy=wave_lbl) %&gt;%
       summarize(cable_km2 = sum(area_km2)),
-    # read_csv(file.path(dir_tbl, &quot;cables_wind.csv&quot;)) %&gt;%
-    #   filter(depth_beg &lt;= 200, wind_beg &gt;= 7) %&gt;%
-    #   group_by(region, energy=wind_lbl) %&gt;%
-    #   summarize(cable_km2 = sum(area_km2)),
     by=c(&quot;region&quot;,&quot;energy&quot;)) %&gt;%
   mutate(
     cable_pct_viable = cable_km2 / viable_km2 * 100) %&gt;% 
@@ -2674,7 +2650,7 @@ tbl_4 %&gt;%
     region, energy,
     viable_km2, 
     cable_km2, cable_pct_viable)
-#tbl_5
+
 write_csv(tbl_5, file.path(dir_tbl, &quot;table_5.csv&quot;))
 
 tbl_5 %&gt;% 
@@ -2784,7 +2760,7 @@ tbl_5 %&gt;%
     region, energy,
     viable_km2, 
     cable_km2, cable_pct_viable)
-#tbl_6
+
 write_csv(tbl_6, file.path(dir_tbl, &quot;table_6.csv&quot;))
 
 tbl_6 %&gt;% 
