@@ -1,0 +1,645 @@
+---
+title: "Tables for Legal Rights of Way (200 Feet Buffer)"
+author: "Ben Best"
+date: "1/7/2019"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true    
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r, eval=F}
+# load packages ----
+library(tidyverse)
+library(glue)
+library(here)
+library(sf)
+library(units)
+library(raster)
+select <- dplyr::select
+devtools::load_all(here("../nrelutils"))
+
+# paths -----
+ter_0_geo       <- here("data/usa_rgn.geojson")
+ter_geo         <- here("data/200ft/territories.geojson")
+lns_geo         <- here("data/lns.geojson")
+cables_geo      <- here("data/200ft/cables.geojson")
+depth_0_tif     <- here("../nrel-uses/data/layers/depth/_depth_epsg4326.tif")
+depth_tif       <- here("data/200ft/depth.tif")
+cables_b_tif    <- here("data/200ft/cables_b.tif")
+depth_m_tif     <- here("data/200ft/depth_m.tif")
+depth_mr_tif    <- here("data/200ft/depth_mr.tif")
+depth_mr_geo    <- here("data/200ft/depth_mr.geojson")
+cables_td_geo   <- here("data/200ft/cables_lns.geojson")
+ply_cables_geo  <- here("data/200ft/cables_buf.geojson")
+tide_max_tif    <- here("data/200ft/tide_max.tif")
+tide_tif        <- here("data/200ft/tide.tif")
+tide_geo        <- here("data/200ft/tide.geojson")
+cables_tide_geo <- here("data/200ft/cables_buf200ft_tide.geojson")
+wave_0_geo      <- here("data/wave.geojson")
+wave_geo        <- here("data/200ft/wave.geojson")
+wind_0_geo      <- here("data/wind.geojson")
+wind_geo        <- here("data/200ft/wind.geojson")
+cables_tide_geo <- here("data/200ft/cables_buf_tide.geojson")
+cables_wave_geo <- here("data/200ft/cables_buf_wave.geojson")
+cables_wind_geo <- here("data/200ft/cables_buf_wind.geojson")
+
+# helper functions ----
+recode_territory <- function(d){
+  d %>% 
+    mutate(
+      territory = case_when(
+        territory %in% c(
+          'Puerto Rico','US Virgin Islands') ~ "Atlantic Islands",
+        territory %in% c(
+          'Guam','Johnston Atoll','N Mariana Islands','Palmyra Atoll','Wake Island') ~ "Pacific Islands",
+        TRUE ~ territory))
+}
+
+buffer_gcs <- function(x, b, wrap=T, crs=4326){
+  # x = lns_cables_td$geometry[[1]]; b = set_units(200, ft); wrap = T
+  #browser()
+  
+  bb <- st_bbox(x)
+  lat_range <- extendrange(bb[c('ymin','ymax')], f=-1/6) # 5.796732 8.983678
+  crs_aea <- glue("+proj=aea +lat_1={lat_range[1]} +lat_2={lat_range[2]} +lat_0={mean(lat_range)} 
+                  +lon_0={mean(bb[c('xmin','xmax')])} 
+                  +x_0=0 +y_0=0 +datum=WGS84 +ellps=WGS84 +units=m +no_defs")
+  y <- st_as_sf(tibble(geom=st_sfc(x, crs=crs))) %>% 
+    st_transform(crs_aea) %>% 
+    st_buffer(b) %>% 
+    st_transform(crs)
+  
+  if (wrap) y <- nrelutils::sf_wrap(y)
+
+  y$geom
+  #browser()
+}
+
+geo_to_csv <- function(geo){
+  # geo = geos[1]
+  path_in  <- glue("{dir_out}/{geo}")
+  path_out <- glue("{dir_out}/tables/{path_in %>% basename() %>% fs::path_ext_remove()}.csv")
+  
+  read_sf(path_in) %>%
+    st_drop_geometry() %>% 
+    write_csv(path_out)
+}
+
+# load data ----
+
+# regions
+if (!file.exists(ter_geo)){
+  ply_ter <- read_sf(ter_0_geo) %>% 
+    recode_territory() %>% 
+    group_by(territory) %>% 
+    summarize(
+      area_km2 = sum(area_km2))
+  write_sf(ply_ter, ter_geo)
+}
+ply_ter <- read_sf(ter_geo)
+
+# cables
+if (!file.exists(cables_geo)){
+  lns_cables <- read_sf(lns_geo) %>% 
+    sf_wrap() # x: [141,296]
+  write_sf(lns_cables, cables_geo)
+}
+lns_cables <- read_sf(cables_geo)
+
+# depth
+if (!file.exists(depth_tif)){
+  r_depth <- raster(depth_wrld_tif) %>% # x: [0,360]
+    crop(cables_sf %>% as("Spatial")) # x: [141,296]
+  r_depth[r_depth < 0] <- NA
+  writeRaster(r_depth, depth_tif, overwrite=T)
+}
+r_depth <- raster(depth_tif)
+
+# buffer
+if (!file.exists(cables_b_tif)){
+  ply_cables_b <- st_buffer(lns_cables, xres(r_depth)) %>% 
+    st_cast("POLYGON")
+  r_cables_b   <- fasterize::fasterize(ply_cables_b, r_depth)
+  writeRaster(r_cables_b, cables_b_tif, overwrite=T)
+}
+r_cables_b <- raster(cables_b_tif)
+
+# mask depth with cable buffer
+if (!file.exists(depth_m_tif)){
+  r_depth_m <- mask(r_depth, r_cables_b)
+  writeRaster(r_depth_m, depth_m_tif, overwrite=T)
+}
+r_depth_m <- raster(depth_m_tif)
+
+# reclassify masked depth
+if (!file.exists(depth_mr_tif)){
+  tbl_reclass_depth <- tribble(
+    ~depth_from, ~depth_to, ~depth_beg,
+    0, 100, 0,
+    100, 200, 100,
+    200, 1000, 200,
+    1000, Inf, 1000)
+  r_depth_mr <- reclassify(r_depth_m, tbl_reclass_depth) # 104.2/60 min
+  writeRaster(r_depth_mr, depth_mr_tif, overwrite=T)
+}
+r_depth_mr <- raster(depth_mr_tif)
+
+# convert to polygon
+if (!file.exists(depth_mr_geo)){
+  ply_depth_mr <- rasterToPolygons(r_depth_mr, dissolve=T) %>% 
+    st_as_sf() %>% 
+    select(depth_beg=layer) %>% 
+    mutate(
+      depth_beg = as.integer(depth_beg))
+  write_sf(ply_depth_mr, depth_mr_geo)
+}
+ply_depth_mr <- read_sf(depth_mr_geo)
+
+# intersect cables with territory and depth ----
+if (!file.exists(cables_td_geo)){
+  lns_cables_td <- lns_cables %>% 
+    # territory
+    st_intersection(ply_ter) %>% 
+    group_by(territory) %>% 
+    summarize(
+      n_lines = n()) %>% 
+    # depth
+    st_intersection(ply_depth_mr) %>% 
+    mutate(
+      length_km = (st_length(geometry) / 1000) %>% set_units(km),
+      depth_lbl = case_when(
+      depth_beg ==    0 ~ "0-100",
+      depth_beg ==  100 ~ "100-200",
+      depth_beg ==  200 ~ "200-1,000",
+      depth_beg == 1000 ~ ">1,000",
+      TRUE ~ NA_character_)) %>% 
+    arrange(territory, depth_beg) %>% 
+    select(region=territory, depth_lbl, depth_beg, length_km)
+  #st_drop_geometry(lns_cables_td)
+  #file.remove(cables_td_geo)
+  write_sf(lns_cables_td, cables_td_geo)
+}
+lns_cables_td <- read_sf(cables_td_geo)
+
+# buffer cables out 200 ft ----
+if (!file.exists(cables_td_geo)){
+  ply_cables <- lns_cables_td %>% 
+    mutate(
+      geometry = map(geometry, buffer_gcs, set_units(200, ft)) %>% 
+        unlist(recursive = F) %>% 
+        st_sfc(crs=4326),
+      area_km2 = st_area(geometry) %>% set_units(km^2))
+  #st_drop_geometry(ply_cables)
+  #file.remove(ply_cables_geo)
+  write_sf(ply_cables, ply_cables_geo)
+}
+ply_cables <- read_sf(ply_cables_geo)
+
+# prep tide energy (points to raster to vector) ----
+
+# tide: points to max raster
+if (!file.exists(tide_max_tif)){
+  p = read_csv(here("data/tide_rgn-East_pts.csv")) %>%
+    bind_rows(
+      read_csv(here("data/tide_rgn-West_pts.csv"))) %>% 
+    mutate(
+      lon = if_else(lon < 0, lon + 360, lon)) %>% 
+    select(lon, lat, pwr_wm2)
+
+  r_cables_b2 <- aggregate(r_cables_b, fact=2, fun=max)
+
+  r_max <- rasterize(select(p, lon, lat), r_cables_b2, select(p, pwr_wm2), max)
+  
+  writeRaster(r_max, tide_max_tif, overwrite=T)
+}
+r_max <- raster(tide_max_tif)
+
+# tide: reclassify raster
+if (!file.exists(tide_tif)){
+  tbl_reclass_tide <- tribble(
+    ~tide_from, ~tide_to, ~tide_beg,
+    0, 500, 0,
+    500, 1000, 500,
+    1000, 1500, 1000,
+    1500, Inf, 1500)
+  
+  r_tide <- reclassify(r_m, tbl_reclass_tide) # plot(r_mr)
+  
+  writeRaster(r_tide, tide_max_tif, overwrite=T)
+}
+r_tide <- raster(tide_max_tif)
+
+# tide: raster to polygon
+if (!file.exists(tide_geo)){
+  ply_tide <- rasterToPolygons(r_tide, dissolve=T) %>% 
+    st_as_sf() %>% 
+    mutate(
+      tide_beg = as.integer(layer),
+      tide_lbl = case_when(
+        tide_beg ==    0 ~ "0-500",
+        tide_beg ==  500 ~ "500-1,000",
+        tide_beg == 1000 ~ "1,000-1,500",
+        tide_beg == 1500 ~ ">1,500")) %>% 
+    st_intersection(
+      ply_ter %>% 
+        select(
+          region = territory)) %>% 
+    select(region, tide_lbl, tide_beg) %>% 
+    arrange(region, tide_beg) %>% 
+    mutate(
+      area_km2 = st_area(geometry) %>% set_units(km^2))
+  # st_drop_geometry(ply_tide) %>% View()
+  write_sf(ply_tide, tide_geo)
+}
+ply_tide <- read_sf(tide_geo)
+
+# prep wave & wind energy (polygon) ----
+
+# prep wave
+if (!file.exists(wave_0_geo)){
+  ply_wave <- read_sf() %>% # x:[171,297]
+    mutate(geometry = st_buffer(geometry, dist=0)) %>% 
+    recode_territory() %>% 
+    rename(
+      region   = territory,
+      wave_lbl = energy_lbl,
+      wave_beg = energy_num) %>% 
+    arrange(region, wave_beg)
+  write_sf(ply_wave, wave_geo)
+}
+ply_wave <- read_sf(wave_geo)
+#st_drop_geometry(ply_wave) %>% View()
+
+# prep wind
+if (!file.exists(wind_0_geo)){
+  ply_wind <- read_sf(here("data/wind.geojson")) %>% # x:[199,294]
+    mutate(
+      region = case_when(
+        region %in% c(
+          'Atlantic','Pacific') ~ glue("{region} Islands"),
+        TRUE ~ region)) %>%
+    mutate(geometry = st_buffer(geometry, dist=0)) %>%
+    mutate(
+      wind_lbl = case_when(
+        energy_lbl == "<=7" ~ "0-7",
+        energy_lbl == "11-12" ~ ">11",
+        TRUE ~ energy_lbl),
+      wind_beg = case_when(
+        energy_num == 7 ~ 0,
+        energy_num == 8 ~ 7,
+        energy_num == 9 ~ 8,
+        energy_num == 10 ~ 9,
+        energy_num == 11 ~ 10,
+        energy_num == 12 ~ 11,
+        TRUE ~ NA_real_)) %>% 
+    arrange(region, wind_beg) %>% 
+    select(region, wind_lbl, wind_beg, area_km2)
+  write_sf(ply_wind, wind_geo)
+}
+ply_wind <- read_sf(wind_geo)
+#st_drop_geometry(ply_wind)
+
+# intersect cables with energy ----
+
+# tide x cables
+if (!file.exists(cables_tide_geo)){
+  ply_cables_tide <- ply_cables %>% 
+    select(region, depth_lbl, depth_beg) %>% 
+    st_intersection(
+      ply_tide %>% 
+        select(tide_lbl, tide_beg)) %>% 
+    mutate(
+      area_km2 = st_area(geometry) %>% set_units(km^2))
+  write_sf(ply_cables_tide, cables_tide_geo)
+}
+ply_cables_tide <- read_sf(cables_tide_geo)
+#st_drop_geometry(ply_cables_tide)
+
+# wave x cables
+if (!file.exists(cables_wave_geo)){
+  ply_cables_wave <- ply_cables %>% 
+    select(region, depth_lbl, depth_beg) %>% 
+    st_intersection(
+      ply_wave %>% 
+        select(wave_lbl, wave_beg)) %>% 
+    mutate(
+      area_km2 = st_area(geometry) %>% set_units(km^2))
+  write_sf(ply_cables_wave, cables_wave_geo)
+}
+ply_cables_wave <- read_sf(cables_wave_geo)
+#st_drop_geometry(ply_cables_wave)
+
+# wind x cables
+if (!file.exists(cables_wind_geo)){
+ply_cables_wind <- ply_cables %>% 
+  select(region, depth_lbl, depth_beg) %>% 
+  st_intersection(
+    ply_wind %>% 
+      select(wind_lbl, wind_beg)) %>% 
+  mutate(
+    area_km2 = st_area(geometry) %>% set_units(km^2))
+  write_sf(ply_cables_wind, cables_wind_geo)
+}
+ply_cables_wind <- read_sf(cables_wind_geo)
+#st_drop_geometry(ply_cables_wind)
+
+# geojson to csv ----
+dir_out <- here("data/200ft")
+geos <- list.files(dir_out, ".*\\.geojson") %>% 
+  setdiff(c("cables.geojson", "depth_mr.geojson"))
+walk(geos, geo_to_csv)
+```
+
+## ES-1. EEZ & Cable Area
+
+```{r}
+library(tidyverse)
+library(here)
+library(glue)
+library(knitr)
+
+options(digits=3)
+
+dir_tbl <- here("data/200ft/tables")
+
+tbl_es1 <- read_csv(file.path(dir_tbl, "regions.csv")) %>% 
+  left_join(
+    read_csv(file.path(dir_tbl, "cables.csv")) %>% 
+      group_by(region) %>% 
+      summarize(
+        cable_km2 = sum(area_km2)),
+    by="region") %>% 
+  mutate(
+    cable_pct = cable_km2 / area_km2 * 100)
+write_csv(tbl_es1, file.path(dir_tbl, "table_ES-1.csv"))
+
+tbl_es1 %>% 
+  kable(
+    format.args=list(big.mark=','), 
+    caption="Table ES-1: U.S. Exclusive Economic Zone area and cable setbacks area, by region.")
+```
+
+Source: [table_ES-1.csv](https://github.com/ecoquants/nrel-cables/blob/master/data/200ft/tables/table_ES-1.csv)
+
+## ES-2. Energy Resource & Cable Overlap Area
+
+```{r}
+eez_km2 <- sum(tbl_es1$area_km2)
+
+tbl_es2 <- read_csv(file.path(dir_tbl, "energy-depth_3z.csv")) %>% 
+  group_by(energy=form) %>% 
+  summarize(viable_km2 = sum(area_km2)) %>% 
+  left_join(
+    bind_rows(
+      read_csv(file.path(dir_tbl, "cables_tide.csv")) %>% 
+        filter(depth_beg == 0, tide_beg >= 500) %>% 
+        summarize(cable_km2 = sum(area_km2)) %>%
+        mutate(energy = "tide"),
+      read_csv(file.path(dir_tbl, "cables_wave.csv")) %>% 
+        filter(depth_beg <= 100, wave_beg >= 10) %>% 
+        summarize(cable_km2 = sum(area_km2)) %>%
+        mutate(energy = "wave"),
+      read_csv(file.path(dir_tbl, "cables_wind.csv")) %>% 
+        filter(depth_beg <= 200, wind_beg >= 7) %>% 
+        summarize(cable_km2 = sum(area_km2)) %>%
+        mutate(energy = "wind")),
+    by="energy") %>%
+  mutate(
+    viable_pct_eez   = viable_km2 / eez_km2 * 100,
+    cable_pct_viable = cable_km2 / viable_km2 * 100) %>% 
+  select(
+    energy,
+    viable_km2, viable_pct_eez,
+    cable_km2, cable_pct_viable)
+#tbl_es2
+write_csv(tbl_es2, file.path(dir_tbl, "table_ES-2.csv"))
+
+tbl_es2 %>% 
+  kable(
+    format.args=list(big.mark=','), 
+    caption="Table ES-2: Definitions of ‘viable’ resource areas for offshore wind, tidal, and wave energy, resource totals, and their cable setback overlap in the U.S. EEZ.")
+```
+
+Source: [table_ES-2.csv](https://github.com/ecoquants/nrel-cables/blob/master/data/200ft/tables/table_ES-2.csv)
+
+## 1. Regions & Cable Lengths
+
+```{r}
+tbl_1 <- read_csv(file.path(dir_tbl, "regions.csv")) %>% 
+  select(
+    region, region_km2=area_km2) %>% 
+  left_join(
+    read_csv(file.path(dir_tbl, "cables.csv")) %>% 
+      group_by(region) %>% 
+      summarize(
+        cable_km = sum(length_km)),
+    by="region")
+
+write_csv(tbl_1, file.path(dir_tbl, "table_1.csv"))
+
+tbl_1 %>% 
+  kable(
+    format.args=list(big.mark=','), 
+    caption="Table 1. Summary of U.S. regions data, including EEZ area, cable lengths and availability of resource data.")
+```
+
+Source: [table_1.csv](https://github.com/ecoquants/nrel-cables/blob/master/data/200ft/tables/table_1.csv)
+
+## 2. Regions & Cable Overlap Area
+
+```{r}
+tbl_2 <- read_csv(file.path(dir_tbl, "regions.csv")) %>% 
+  select(
+    region, region_km2=area_km2) %>% 
+  left_join(
+    read_csv(file.path(dir_tbl, "cables.csv")) %>% 
+      group_by(region) %>% 
+      summarize(
+        cable_km2 = sum(area_km2)),
+    by="region") %>% 
+  mutate(
+    cable_pct_region = cable_km2 / region_km2 * 100)
+
+write_csv(tbl_2, file.path(dir_tbl, "table_2.csv"))
+
+tbl_2 %>% 
+  kable(
+    format.args=list(big.mark=','), 
+    caption="Table 2. Area of regions and cable setback within the EEZ.")
+```
+
+Source: [table_2.csv](https://github.com/ecoquants/nrel-cables/blob/master/data/200ft/tables/table_2.csv)
+
+## 3. Binned Resource & Cable Overlap Area
+
+```{r}
+tbl_3 <- read_csv(file.path(dir_tbl, "energy-depth_3z.csv")) %>% 
+  group_by(form, energy, depth) %>% 
+  summarize(viable_km2 = sum(area_km2)) %>% 
+  ungroup() %>% 
+  mutate(
+    energy = recode(energy, `11-12`=">11")) %>% 
+  left_join(
+    bind_rows(
+      read_csv(file.path(dir_tbl, "cables_tide.csv")) %>% 
+        filter(depth_beg == 0, tide_beg >= 500) %>% 
+        group_by(energy=tide_lbl, depth=depth_lbl) %>% 
+        summarize(cable_km2 = sum(area_km2)) %>%
+        mutate(form = "tide"),
+      read_csv(file.path(dir_tbl, "cables_wave.csv")) %>% 
+        filter(depth_beg <= 100, wave_beg >= 10) %>% 
+        group_by(energy=wave_lbl, depth=depth_lbl) %>% 
+        summarize(cable_km2 = sum(area_km2)) %>%
+        mutate(form = "wave"),
+      read_csv(file.path(dir_tbl, "cables_wind.csv")) %>% 
+        filter(depth_beg <= 200, wind_beg >= 7) %>% 
+        group_by(energy=wind_lbl, depth=depth_lbl) %>% 
+        summarize(cable_km2 = sum(area_km2)) %>%
+        mutate(form = "wind")),
+    by=c("form","energy","depth")) %>%
+  mutate(
+    cable_pct_viable = cable_km2 / viable_km2 * 100) %>% 
+  select(
+    form, energy, depth,
+    viable_km2, 
+    cable_km2, cable_pct_viable)
+#tbl_3
+write_csv(tbl_3, file.path(dir_tbl, "table_3.csv"))
+
+tbl_3 %>% 
+  kable(
+    format.args=list(big.mark=','), 
+    caption="Table 3. Area of energy and depth classes with overlap by cable setback, across all assessed
+energy resources.")
+```
+
+Source: [table_3.csv](https://github.com/ecoquants/nrel-cables/blob/master/data/200ft/tables/table_3.csv)
+
+## 4. Tidal Resource & Cable Overlap Area by Region
+
+```{r}
+tbl_4 <- read_csv(here("data/tide_depth_cables.csv")) %>% 
+  filter(
+    territory != "ALL",
+    energy_factor != "0-500",
+    depth_factor %in% c("0-100")) %>% 
+  group_by(region=territory, energy=energy_factor) %>% 
+  summarize(viable_km2 = sum(area_km2)) %>% 
+  ungroup() %>% 
+  # mutate(
+  #   energy = recode(energy, `11-12`=">11")) %>% 
+  left_join(
+    read_csv(file.path(dir_tbl, "cables_tide.csv")) %>% 
+      filter(depth_beg == 0, tide_beg >= 500) %>% 
+      group_by(region, energy=tide_lbl) %>% 
+      summarize(cable_km2 = sum(area_km2)),
+    # read_csv(file.path(dir_tbl, "cables_wave.csv")) %>%
+    #   filter(depth_beg <= 100, wave_beg >= 10) %>%
+    #   group_by(energy=wave_lbl, depth=depth_lbl) %>%
+    #   summarize(cable_km2 = sum(area_km2)),
+    # read_csv(file.path(dir_tbl, "cables_wind.csv")) %>%
+    #   filter(depth_beg <= 200, wind_beg >= 7) %>%
+    #   group_by(energy=wind_lbl, depth=depth_lbl) %>%
+    #   summarize(cable_km2 = sum(area_km2)),
+    by=c("region","energy")) %>%
+  mutate(
+    cable_pct_viable = cable_km2 / viable_km2 * 100) %>% 
+  select(
+    region, energy,
+    viable_km2, 
+    cable_km2, cable_pct_viable)
+#tbl_4
+write_csv(tbl_4, file.path(dir_tbl, "table_4.csv"))
+
+tbl_4 %>% 
+  kable(
+    format.args=list(big.mark=','), 
+    caption="Table 4. Viable tidal resource area and setbacks by region and resource bin.")
+```
+
+Source: [table_4.csv](https://github.com/ecoquants/nrel-cables/blob/master/data/200ft/tables/table_4.csv)
+
+## 5. Wave Resource & Cable Overlap Area by Region
+
+```{r}
+tbl_5 <- read_csv(here("data/wave_depth_cables.csv")) %>% 
+  filter(
+    territory != "ALL",
+    energy_factor != "0-10",
+    depth_factor %in% c("0-100","100-200")) %>% 
+  group_by(region=territory, energy=energy_factor) %>% 
+  summarize(viable_km2 = sum(area_km2)) %>% 
+  ungroup() %>% 
+  # mutate(
+  #   energy = recode(energy, `11-12`=">11")) %>% 
+  left_join(
+    read_csv(file.path(dir_tbl, "cables_wave.csv")) %>%
+      filter(depth_beg <= 100, wave_beg >= 10) %>%
+      group_by(region, energy=wave_lbl) %>%
+      summarize(cable_km2 = sum(area_km2)),
+    # read_csv(file.path(dir_tbl, "cables_wind.csv")) %>%
+    #   filter(depth_beg <= 200, wind_beg >= 7) %>%
+    #   group_by(region, energy=wind_lbl) %>%
+    #   summarize(cable_km2 = sum(area_km2)),
+    by=c("region","energy")) %>%
+  mutate(
+    cable_pct_viable = cable_km2 / viable_km2 * 100) %>% 
+  select(
+    region, energy,
+    viable_km2, 
+    cable_km2, cable_pct_viable)
+#tbl_5
+write_csv(tbl_5, file.path(dir_tbl, "table_5.csv"))
+
+tbl_5 %>% 
+  kable(
+    format.args=list(big.mark=','), 
+    caption="Table 5. Viable wave resource area and setbacks by region and resource category.")
+```
+
+Source: [table_5.csv](https://github.com/ecoquants/nrel-cables/blob/master/data/200ft/tables/table_5.csv)
+
+## 6. Wind Resource & Cable Overlap Area by Region
+
+```{r}
+tbl_6 <- read_csv(here("data/wind_depth_cables.csv")) %>% 
+  filter(
+    territory != "ALL",
+    energy_factor != "<=7",
+    depth_factor %in% c("0-100","100-200","200-1,000")) %>% 
+  group_by(region=territory, energy=energy_factor) %>% 
+  summarize(viable_km2 = sum(area_km2)) %>% 
+  ungroup() %>% 
+  mutate(
+    energy = recode(energy, `11-12`=">11")) %>%
+  left_join(
+    read_csv(file.path(dir_tbl, "cables_wind.csv")) %>%
+      filter(depth_beg <= 200, wind_beg >= 7) %>%
+      group_by(region, energy=wind_lbl) %>%
+      summarize(cable_km2 = sum(area_km2)),
+    by=c("region","energy")) %>%
+  mutate(
+    cable_pct_viable = cable_km2 / viable_km2 * 100) %>% 
+  select(
+    region, energy,
+    viable_km2, 
+    cable_km2, cable_pct_viable)
+#tbl_6
+write_csv(tbl_6, file.path(dir_tbl, "table_6.csv"))
+
+tbl_6 %>% 
+  kable(
+    format.args=list(big.mark=','), 
+    caption="Table 6. Viable wind resource area and setbacks by region and resource category.")
+```
+
+Source: [table_6.csv](https://github.com/ecoquants/nrel-cables/blob/master/data/200ft/tables/table_6.csv)
+
