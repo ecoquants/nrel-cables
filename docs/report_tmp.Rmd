@@ -1,0 +1,749 @@
+---
+title: "Submarine Cable Analysis for US Marine Renewable Energy Development"
+output: pdf_document
+---
+
+```{r setup0, include=F}
+knitr::opts_chunk$set(warning=F, message=F, eval=T, cache=T, echo=F) # DEBUG
+```
+
+
+```{r setup, include=FALSE, eval=F}
+# set working directory
+if (basename(getwd()) == 'nrel-cables') setwd('docs')
+
+# load packages and variables
+source('./packages_vars.R')
+
+#opts_chunk$set(warning=F, message=F)
+opts_chunk$set(warning=F, message=F, eval=T, cache=T) # DEBUG
+fig_type = 'png' # 'png','pdf','html'
+fig_dpi = 300
+redo = F
+
+if (interactive() || "rmarkdown.pandoc.to" %in% names(opts_knit$get()) && opts_knit$get("rmarkdown.pandoc.to") == 'html'){
+  out_html = T
+  #opts_chunk$set(echo=T)
+  opts_chunk$set(echo=F)
+} else {
+  out_html = F
+  opts_chunk$set(echo=F)
+}
+
+fmt_tbl = function(csv, params, energy_hdr, caption){
+
+  # csv        = wave_depth_cbls_csv
+  # params     = plot_energy_params$wave
+  # energy_hdr = 'Wave Energy (kW/m)'
+  # caption    = 'Table 5: Area overlap with cables for wave energy (kW/m) by territory.'
+  
+  d = get_tbl_energy_cbls(csv, params)
+  
+  # correct for odd flipping from using className='dt-right'
+  d = d %>%
+    mutate(
+      energy = recode(
+        energy,
+        `<=7`='7=>',
+        `>30`='30<',
+        `>1500`='1500<'))
+  
+  hdr = htmltools::withTags(table(
+    class = 'display',
+    thead(
+      tr(
+        th(rowspan=2, 'Territory'),
+        th(rowspan=2, HTML(energy_hdr)),
+        th(rowspan=2, HTML('Area (km<sup>2</sup>)')),
+        th(colspan=2, 'Facilities (2z)'),
+        th(colspan=2, 'Cable (3z)')),
+      tr(
+        th(HTML('Area (km<sup>2</sup>)')),
+        th('(%)'),
+        th(HTML('Area (km<sup>2</sup>)')),
+        th('(%)')))))
+
+  d %>%
+    mutate(
+      territory  = ifelse(duplicated(territory), '', territory),
+      area_km2   = accounting(area_km2, digits=0),
+      cable2_km2 = accounting(cable2_km2, digits=0),
+      cable3_km2 = accounting(cable3_km2, digits=0),
+      cable2_pct = percent(cable2_pct, digits=1),
+      cable3_pct = percent(cable3_pct, digits=1)) %>%
+    select(
+      territory, energy, area_km2,
+      cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
+    formattable(
+      list(
+        energy     = color_bar('lightblue'),
+        area_km2   = color_bar('lightgray'),
+        cable2_pct = color_bar('lightpink'),
+        cable3_pct = color_bar('lightgreen'))) %>%
+    as.datatable(
+      rownames=F, container=hdr, caption=caption,
+      options = list(
+        dom='t', # off: n_entries/search/paging/ordering
+        pageLength = nrow(d), ordering=F,
+        columnDefs = list(list(className='dt-right', targets=1:5))))
+}
+
+get_tbl_energy_cbls = function(csv, params){
+  
+  #csv    = wave_depth_cbls_csv
+  #params = plot_energy_params$wave
+  
+  d = read_csv(csv) %>%
+    filter(
+      !is.na(territory),
+      territory != 'ALL',
+      depth_factor %in% params$depth_ranges,
+      energy_factor != params$energy_labels[1]) %>%
+    # summarize across depths
+    group_by(territory, energy_factor) %>%
+    summarize(
+      area_km2 = sum(area_km2),
+      cable2_km2 = sum(cable2_km2),
+      cable3_km2 = sum(cable3_km2)) %>% 
+    mutate(
+      cable2_pct = cable2_km2 / area_km2,
+      cable3_pct = cable3_km2 / area_km2,
+      energy     = factor(energy_factor, params$energy_labels, ordered=T),
+      pct_lbl    = sprintf('%0.1f - %0.1f%%', cable2_pct*100, cable3_pct*100)) %>%
+    ungroup() %>%
+    arrange(territory, energy) %>%
+    select(territory, energy, area_km2, cable2_km2, cable3_km2, cable2_pct, cable3_pct, pct_lbl)
+  
+  d
+}
+
+plot_cbls = function(
+  csv           = tide_depth_cbls_csv,
+  params        = plot_energy_params$tidal,
+  legend_position      = c(1,1),
+  legend_justification = c(1,1)){ 
+
+  # csv    = wave_depth_cbls_csv
+  # params = plot_energy_params$wave
+  # legend_position      = c(1,0.3)
+  # legend_justification = c(1,1)
+  
+  d = get_tbl_energy_cbls(csv, params)
+
+  d_lbl = d %>%
+    mutate(
+      type = NA)
+  
+  d_p = d %>%
+    mutate(
+      min_2d = cable2_km2,
+      rec_3d = cable3_km2 - cable2_km2,
+      rem    = area_km2 - cable3_km2) %>%
+    select(
+      territory, energy, min_2d, rec_3d, rem) %>%
+    gather(type, km2, -energy, -territory) %>%
+    mutate(
+      type = factor(
+        type,
+        names(cable_ord),
+        cable_ord, ordered=T)) %>%
+    arrange(territory, energy, type)
+  
+  p = ggplot(
+      data=d_p,
+      aes(x = energy, y = km2/1000, fill=type)) +
+    geom_col() +
+    geom_text(
+      data=d_lbl,
+      aes(x = energy, y = area_km2/1000, label=pct_lbl), vjust=-0.5, size=2.5) +
+    labs(
+      x = parse(text=params$xlab), 
+      y = expression(paste('Area (1,000 ', km^2,')')), fill='Overlap') +
+    theme(
+      legend.justification = legend_justification, 
+      legend.position      = legend_position,
+      axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    expand_limits(y = expand_range(c(0, max(d$area_km2/1000)), mul=0.1)[2]) + 
+    facet_wrap(~territory) 
+  print(p)
+}
+
+fig_exists = function(fig){ 
+  fig_ext = sprintf('%s.%s', fig, fig_type)
+  file.exists(fig_ext)}
+
+map_cable = function(
+  ter,
+  fig,
+  redo){
+  # ter = 'Hawaii'; fig = sprintf('figs/mapCable_%s', str_replace_all(ter,' ','-')); energy_sf = wind_sf; legend_title = sprintf('Submarine cables within %s EEZ.', ter); redo = T
+  
+  fig_ext = sprintf('%s.%s', fig, fig_type)
+  if (!file.exists(fig_ext) | redo){
+    
+    eez = usa_eez %>%
+      filter(territory==ter)
+    cables = lns_d1x %>%
+      filter(territory==ter)
+    cables2 = dx2 %>%
+      filter(territory==ter)
+    cables3 = dx3 %>%
+      filter(territory==ter)
+    
+    bb = st_bbox(eez)
+    bb_ply = st_sf(
+      tibble(
+        territory = ter,
+        geom = st_sfc(st_polygon(list(rbind(
+          c(bb['xmin'], bb['ymin']),
+          c(bb['xmax'], bb['ymin']),
+          c(bb['xmax'], bb['ymax']),
+          c(bb['xmin'], bb['ymax']),
+          c(bb['xmin'], bb['ymin'])))), crs = 4326)))
+    earth = land %>%
+      filter(
+        st_intersects(land, bb_ply, sparse=F)[,1]) # plot(earth)
+
+    p = ggplot(data=eez) +
+      geom_sf(data=earth, fill='gray40', size=0.2, color=NA) +
+      geom_sf(data=eez, fill=NA, color='gray40') +
+      geom_sf(data=cables3, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables2, fill='red', color=NA, alpha=0.15) +
+      geom_sf(data=cables, color='red', size=0.1, alpha=0.9) +
+      coord_sf(
+        xlim=bb[c('xmin','xmax')], 
+        ylim=bb[c('ymin','ymax')])
+      
+    if (fig_type=='pdf'){
+      pdf(fig_ext, width=6.5, height=5)
+    }  else {
+      png(fig_ext, res=fig_dpi, width=6.5, height=5, units='in')
+    }
+    print(p)
+    dev.off()
+  }
+  #system(sprintf('open %s', fig))
+  #knitr::include_graphics(fig, dpi=fig_dpi)
+}
+
+map_energy_sf = function(
+  energy_sf,
+  ter,
+  legend_title){
+  # ter = 'Hawaii'; energy_sf = wind_sf; legend_title = 'Wind<br>power (m/s)'; redo = T
+  # ter =   'West'; energy_sf = wave_sf; legend_title = 'Wave\nenergy\n(kW/m)'; redo = T
+  
+  d = energy_sf %>% 
+    filter(territory==ter)
+  cables = lns_d1x %>%
+    filter(territory==ter)
+  cables2 = cbls2 %>%
+    filter(territory==ter)
+  cables3 = cbls3  %>%
+    filter(territory==ter)
+
+  bb = st_bbox(d)
+
+  pal_energy = colorFactor('BuGn',      d$energy)
+  pal_depth  = colorFactor('OrRd', cables3$depth, reverse=T)
+  
+  m = leaflet(d, 
+              options=c(leafletOptions(), attributionControl=F, zoomControl=F)) %>% 
+    addProviderTiles('Stamen.TonerLite', group = 'B&W') %>%
+    #addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
+      #, options = c(providerTileOptions(), list(attribution=''))) %>% # 
+    addPolygons(
+      group=legend_title,
+      #fillColor = ~pal_energy(energy), fillOpacity = 0.5, color=NA) %>% 
+      fillColor = ~pal_energy(energy), fillOpacity = 0.5, stroke=F) %>% 
+    addPolygons(
+      data = cables2, group='Min. Cable (2x)',
+      #fillColor=~pal_depth(depth), fillOpacity = 0.3, color=NA) %>%
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, stroke=F) %>%
+    addPolygons(
+      data = cables3, group='Rec. Cable (3x)',
+      #fillColor=~pal_depth(depth), fillOpacity = 0.3, color=NA) %>%      
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, stroke=F) %>%      
+    addPolylines(
+      data = cables, group='Cables',
+      color='black', opacity = 0.5, weight=0.4) %>% #,
+    fitBounds(bb[['xmin']],bb[['ymin']],bb[['xmax']],bb[['ymax']]) %>%
+    addLegend(
+      position='bottomright', 
+      pal=pal_energy, values=~energy, title=legend_title) %>%
+    addLegend(
+      position='bottomright', 
+      pal=pal_depth, values=cables3$depth, title='Cable<br>depth (m)') %>%
+    # addLayersControl(
+    #   baseGroups = c('Ocean','B&W'),
+    #   overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
+    #   options = layersControlOptions(collapsed=T)) %>%
+    addScaleBar('bottomleft')
+  
+  ## save html to png
+  # saveWidget(m, "test.html", selfcontained = FALSE)
+  # webshot("test.html", file = "test.png", cliprect = "viewport", delay=1)
+  # system('open test.png')
+  
+  m
+}
+
+map_tide = function(
+  ter,
+  legend_title='Tidal<br>power (W/m<sup>2</sup>)'){
+  # ter = 'Puerto Rico'; legend_title = 'Tidal<br>power (W/m<sup>2</sup>)'
+  # ter = 'Alaska'; legend_title = 'Tidal\npower\n(W/m2)'
+  
+  ter_str = str_replace_all(ter, ' ', '-')
+  tif = sprintf('../data/tide_ter-%s.tif', ter_str)
+  r = raster(tif) # plot(r)
+  
+  # aggregate and adjust to [-180,180] from [0,360] for leaflet to show
+  r_a = aggregate(r, fact=8, fun=max) %>%
+    shift(-360) %>%
+    cut(breaks = tide_breaks, include.lowest=T) # plot(r_a)
+  bb = bbox(r_a)
+  
+  # project to leaflet's mercator using nearest neighbor for factor color palette
+  r_m = projectRaster(r_a, projectExtent(r_a, crs = CRS(leaflet:::epsg3857)), method='ngb')
+  
+  # use cables reprojected to [-180,180]
+  cables = cbls_180 %>%
+    filter(territory==ter)
+  cables2 = cbls2_180 %>%
+    filter(territory==ter)
+  cables3 = cbls3_180 %>%
+    filter(territory==ter)
+
+  n_lbl = length(tide_labels)
+  pal_energy = colorFactor(
+    palette = 'BuGn', na.color="#00000000",
+    domain  = 1:n_lbl)
+  pal_depth  = colorFactor('OrRd', cables3$depth, reverse=T)
+
+  m = leaflet(
+    options=c(leafletOptions(), attributionControl=F, zoomControl=F)) %>% 
+    addProviderTiles('Stamen.TonerLite', group = 'B&W') %>%
+    #addProviderTiles('Esri.OceanBasemap', group = 'Ocean') %>%
+    addRasterImage(
+      r_m, project=F, group=legend_title,
+      colors=pal_energy, opacity=0.7) %>%
+    addPolygons(
+      data = cables3, group='Min. Cable (2x)',
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, stroke=F) %>%
+    addPolygons(
+      data = cables2, group='Rec. Cable (3x)',
+      fillColor=~pal_depth(depth), fillOpacity = 0.3, stroke=F) %>%      
+    addPolylines(
+      data = cables, group='Cables',
+      color='black', opacity = 0.5, weight=0.4) %>%
+    fitBounds(bb[1,'min'],bb[2,'min'],bb[1,'max'],bb[2,'max']) %>%
+    addLegend(
+      position = 'bottomright', 
+      colors   = pal_energy(1:n_lbl), 
+      labels   = tide_labels,
+      title=legend_title) %>%
+    addLegend(
+      position='bottomright', 
+      pal=pal_depth, values=cables3$depth, title='Cable<br>depth (m)') %>%
+    # addLayersControl(
+    #   baseGroups = c('Ocean','B&W'),
+    #   overlayGroups = c(legend_title, 'Min. Cable (2x)', 'Rec. Cable (3x)', 'Cables'),
+    #   options = layersControlOptions(collapsed=T)) %>%
+    addScaleBar('bottomleft')
+   m
+}
+
+# calculate length of cables / comment to speed up
+# lns_km = read_sf(lns_geo) %>%
+#   mutate(
+#     length = st_length(geometry)) %>%
+#   summarize(length_km = sum(length)/1000) %>% 
+#   .$length_km %>% as.numeric()
+# 
+# lns_d1x_km = lns_d1x %>%
+#   mutate(
+#     length = st_length(geometry)) %>%
+#   summarize(length_km = sum(length)/1000) %>% 
+#   .$length_km %>% as.numeric()
+lns_km = 230834.9
+lns_d1x_km = 97321.2
+
+# revert to old red-green-blue default color, not new viridis
+#   per https://github.com/tidyverse/ggplot2/blob/00ecd3670ef0f1c195bf4c6b5ada3b1895712f1c/NEWS.md#ggplot2-2219000
+scale_fill_ordinal = scale_fill_hue
+```
+
+```{r tbl03Energy, eval=F}
+caption = 'Table 3: Area of energy classes per depth bin across forms of energy resource characterization (tidal, wave and wind) with percent overlap by horizontal safety seperation scheme from existing submarine cables for new facilities (2 * depth; min.) and new cables (3 * depth; max.). Assessed area of overlap with energy resource characterization is limited to a maximum depth (tidal: < 100 m; wave: < 200 m; wind: < 1000 m) and minimum energy classes (tidal: > 500 W/m2; wave: > 10 kW/m; wind > 7 m/s) for viable renewable energy development. Summaries across ALL depth and energy bins are provided for each form of energy. Width of colored bars indicate value relative to rest of column, which is most easily read as area available (gray) and percent maximum overlap (red bar).'
+
+depth_levels  = c('','0-100','100-200','200-1,000','ALL')
+energy_levels = c(
+  '',
+  '7-8','500-1,000','10-20',
+  '8-9','1,000-1,500','20-30',
+  '9-10','>1,500','>30',
+  '10-11','11-12','ALL')
+
+tbl = read_csv(tbl_form_cbls_csv) %>%
+  mutate(
+    form = recode(form,
+      'tide' = 'Tidal (W/m<sup>2</sup>)',
+      'wave' = 'Wave (kW/m)',
+      'wind' = 'Wind (m/s)')) %>%
+  select(
+    form, energy, depth, area_km2,
+    cable2_km2, cable2_pct, cable3_km2, cable3_pct)
+
+tbl = tbl %>%
+  mutate(
+    energy = factor(energy, energy_levels, ordered=T),
+    depth  = factor(depth, depth_levels, ordered=T)) %>%
+  arrange(
+    form, energy, depth)
+
+tbl_smry = tbl %>%
+  group_by(form) %>%
+  # summarize across ALL viable depth and energy bins
+  summarize(
+    area_km2   = sum(area_km2),
+    cable2_km2 = sum(cable2_km2),
+    cable3_km2 = sum(cable3_km2)) %>%
+  mutate(
+    energy     = factor('ALL', energy_levels, ordered=T),
+    depth      = factor('ALL', depth_levels, ordered=T),
+    cable2_pct = cable2_km2 / area_km2,
+    cable3_pct = cable3_km2 / area_km2) %>%
+  ungroup() %>%
+  select(
+    form, energy, depth, area_km2,
+    cable2_km2, cable2_pct, cable3_km2, cable3_pct)
+
+tbl$form[duplicated(tbl$form)]     = ''
+tbl$energy[duplicated(tbl$energy)] = ''
+
+# TODO: Table 3a for summary, 3b for detailed
+d = tbl_smry %>%
+  bind_rows(
+    tbl)
+#d = tbl
+
+# setup depth and energy as factors for showing horizontal indicator bars  
+if (length(setdiff(unique(d$energy), c('', energy_levels))) != 0) 
+  stop('whoah! expecting ALL d$energy in energy_levels')
+energy_labels = c(
+  '',
+  '7-8','500-1,000 ','10-20',
+  '8-9','1,000-1,500','20-30',
+  '9-10',' >1,500',' >30', # correct for odd flip of > w/ className='dt-right'
+  '10-11','11-12',
+  'ALL')
+
+d = d %>%
+  mutate(
+    depth = factor(
+      depth, depth_levels, ordered=T),
+    energy = factor(
+      energy, 
+      levels = energy_levels, 
+      labels = energy_labels,
+      ordered=T))
+  
+
+
+# id=DataTables_Table_0 - Requested unknown parameter '7' for row 0, column 7. For more information about this error, please see http://datatables.net/tn/4
+
+# d = d %>%
+#   mutate(
+#     area_km2   = accounting(area_km2, digits=0),
+#     cable2_km2 = accounting(cable2_km2, digits=0),
+#     cable3_km2 = accounting(cable3_km2, digits=0),
+#     cable2_pct = percent(cable2_pct, digits=1),
+#     cable3_pct = percent(cable3_pct, digits=1)) %>%
+#   select(
+#     form, energy, depth, area_km2,
+#     cable2_km2, cable2_pct, cable3_km2, cable3_pct)
+
+# d_f = d %>%
+#   formattable(
+#     list(
+#       #depth      = color_bar('lightgray'),
+#       #energy     = color_bar('lightblue'),
+#       area_km2   = color_bar('lightgray'),
+#       cable2_pct = color_bar('lightpink'),
+#       cable3_pct = color_bar('lightgreen')))
+
+# a <- data.frame(matrix(1, 20, 5))
+# pval_data <- data.frame(matrix(rnorm(n = 100), 20, byrow = T))
+# 
+# DT::renderDataTable(
+#   datatable(
+#     cbind(a(),pval_data()), 
+#     options = list(
+#       columnDefs = list(list(
+#         targets = 6:10, visible = FALSE)),
+#       rowCallback = JS(paste0(
+# "function(row, data) {
+#         for (i = 1; i < 6; i++) {
+#            value = data[i+5]
+#            if (value < ",input$cutoff,") backgroundValue =",styleColorBar(range(pval_data()), 'lightblue')[1],"
+#            else backgroundValue =", styleColorBar(range(pval_data()), 'red')[1],"
+#            $('td', row).eq(i).css('background',backgroundValue);
+#            $('td', row).eq(i).css('background-repeat','no-repeat');
+#            $('td', row).eq(i).css('background-position','center');
+#            $('td', row).eq(i).css('background-size','98% 88%')
+#          }
+#          }"))
+
+
+# https://stackoverflow.com/questions/32018521/shiny-use-stylecolorbar-with-data-from-two-data-frames
+
+# d_f %>%
+#   as.datatable(
+#     rownames=F, container=hdr, caption=caption,
+#     options = list(
+#       dom='t', # off: n_entries/search/paging/ordering
+#       pageLength = nrow(d), ordering=F,
+#       columnDefs = list(list(className='dt-right', targets=1:7))))
+```
+
+```{r, eval=F}
+style   = formattable::style
+percent = formattable::percent
+
+color_bar2 = formatter(
+  "span",
+  style = ~ style(
+    display = "inline-block",
+    #direction = "rtl", 
+    `border-radius` = "4px", 
+    `padding-right` = "2px",
+    `background-color` = csscolor('lightpink'),
+    # background = sprintf(
+    #   'linear-gradient(to right, rgba(0,0,0,0) 0%%, rgba(0,0,0,0) %0.2f%%, lightpink %0.2f%%, lightpink 100%%)',
+    #   (1 - cable3_pct)*100,
+    #   (1 - cable3_pct)*100),
+    width = percent(cable3_pct)))
+
+hdr = htmltools::withTags(table(
+  class = 'display',
+  thead(
+    tr(
+      th(rowspan=2, 'Form'),
+      th(rowspan=2, 'Energy'),
+      th(rowspan=2, 'Depth (m)'),
+      th(rowspan=2, HTML('Area (km<sup>2</sup>)')),
+      th(colspan=2, 'Overlap with Cable Safety'),
+    tr(
+      th('Max %'),
+      th(HTML('Min - Max km<sup>2</sup> (%)')))))))
+
+# max(nchar(comma(round(d$cable2_km2))))
+# max(nchar(comma(round(d$cable3_km2))))
+# 
+# with(
+#   d,
+#   sprintf(
+#     '%5s - %5s (%04.1f - %04.1f%%)',
+#     comma(round(cable2_km2)), comma(round(cable3_km2)), cable2_pct*100, cable3_pct*100)
+# )
+#   d$cable2_pct
+
+# d %>%
+#   write_csv('test_tbl3-energy.csv')
+tbl_d = d %>%
+  mutate(
+    overlap = sprintf(
+      #'%50s - %s (%0.1f - %0.1f%%)',
+      '%5s - %5s (%4s - %5s)',
+      comma(round(cable2_km2)), 
+      comma(round(cable3_km2)),
+      round(cable2_pct*100, digits=1), 
+      percent(cable3_pct, digits=1)),
+    overlap     = str_replace_all(overlap    , ' ', '&nbsp;'),
+    overlap_pct = '&nbsp;') %>% # ,
+    #overlap_pct = str_replace_all(overlap_pct, ' ', '&nbsp;')) %>%
+  select(form, energy, depth, area_km2, overlap_pct, overlap, cable3_pct) %>%
+  mutate(
+    area_km2   = accounting(area_km2, digits=0),
+    cable3_pct = percent(cable3_pct, digits=1))
+
+tbl_d  %>%
+  formattable(
+    list(
+      area_km2    = color_bar('lightgray'),
+      overlap_pct = color_bar2)) %>%
+      #overlap_pct = color_bar2)) %>%
+  as.datatable(
+    escape = T,
+    rownames=F,
+    container=hdr,
+    caption=caption,
+    options = list(
+      #autoWidth = T,
+      dom='t', # off: n_entries/search/paging/ordering
+      pageLength = nrow(d), ordering=F,
+      columnDefs = list(
+        list(className='dt-right', targets=1:5),
+        list(visible=F, targets=6)))) %>%
+  formatStyle('overlap',  `font-family`= 'monospace')
+        #list(width = '200px', targets=4))))
+```
+
+## New
+
+```{r tblEnergy svg, eval=T}
+d = read_csv('test_tbl3-energy.csv')
+d = 
+  d %>%
+  mutate(
+    overlap = sprintf(
+      '%5s - %5s (%4s - %5s)',
+      comma(round(cable2_km2)), 
+      comma(round(cable3_km2)),
+      round(cable2_pct*100, digits=1), 
+      percent(cable3_pct, digits=1)),
+    overlap     = str_replace_all(overlap    , ' ', '&nbsp;'),
+    overlap_pct = sprintf(
+'<svg><rect width="%0.1f" height="10" fill="steelblue"/></svg>', cable3_pct*100*2)) %>% # ,
+  #select(form, energy, depth, area_km2, overlap_pct) 
+  select(form, energy, depth, area_km2, overlap_pct, overlap, cable3_pct) %>%
+  #mutate(
+  #  area_km2   = accounting(area_km2, digits=0),
+  #  cable3_pct = percent(cable3_pct, digits=1))
+#d %>%
+  datatable(
+    escape = F,
+    rownames=F,
+    #container=hdr,
+    #caption=caption,
+    options = list(
+      #autoWidth = T,
+      dom='t', # off: n_entries/search/paging/ordering
+      pageLength = nrow(d), ordering=F,
+      columnDefs = list(
+        list(className='dt-right', targets=1:5),
+        list(visible=F, targets=6)))) %>%
+  formatStyle('overlap',  `font-family`= 'monospace')
+```
+
+
+## Test
+- [html - SVG taking full height inside a table td - Stack Overflow](https://stackoverflow.com/questions/20312655/svg-taking-full-height-inside-a-table-td)
+- svg rect: [D3TableFilter/staticTableWithD3AndTableFilter.R at master · ThomasSiegmund/D3TableFilter](https://github.com/ThomasSiegmund/D3TableFilter/blob/master/inst/examples/staticTableWithD3AndTableFilter.R#L126-L132)
+
+
+- original: 
+
+```html
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1"><circle cx="100" cy="50" r="80" stroke="black" stroke-width="2" fill="red"/>
+</svg>
+```
+
+```{r svg table, eval=F}
+library(tidyverse)
+library(DT)
+
+# mtcars %>%
+#   select(mpg) %>%
+#   formatStyle('mpg', backgroundColor ='red') %>%
+#   datatable()
+
+iris %>%
+  mutate(Sepal.Width = paste(Sepal.Width, '<svg><circle cx="100" cy="50" r="80" stroke="black" stroke-width="2" fill="red"/>
+</svg>')) %>%
+  datatable(escape=F)
+
+
+  # formatStyle('Sepal.Length', fontWeight = styleInterval(5, c('bold', 'weight'))) %>%
+  # formatStyle('Sepal.Width',
+    # color = styleInterval(3.4, c('red', 'white')),
+    # backgroundColor = styleInterval(3.4, c('yellow', 'gray')))
+```
+
+
+
+```{r , eval=F}
+d_f = d %>%
+  mutate(
+    area_km2   = accounting(area_km2, digits=0),
+    cable2_km2 = accounting(cable2_km2, digits=0),
+    cable3_km2 = accounting(cable3_km2, digits=0),
+    cable2_pct = percent(cable2_pct, digits=1),
+    cable3_pct = percent(cable3_pct, digits=1)) %>%
+  select(
+    form, energy, depth, area_km2,
+    cable2_km2, cable2_pct, cable3_km2, cable3_pct) %>%
+  formattable(
+    list(
+      #depth      = color_bar('lightgray'),
+      #energy     = color_bar('lightblue'),
+      area_km2   = color_bar('lightgray'),
+      cable2_pct = color_bar('lightpink'),
+      cable3_pct = color_bar('lightgreen')))
+
+d_f %>%
+  as.datatable(
+    rownames=F, container=hdr, caption=caption,
+    options = list(
+      dom='t', # off: n_entries/search/paging/ordering
+      pageLength = nrow(d), ordering=F,
+      columnDefs = list(list(className='dt-right', targets=1:7))))
+```
+
+
+```{r blackout, eval=F}
+df = as.data.frame(cbind(matrix(round(rnorm(50), 3), 10), sample(0:1, 10, TRUE)))
+
+datatable(df) %>% formatStyle(names(df),
+  background = styleColorBar(range(df), 'lightblue'),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center')
+```
+
+```{r datatable, eval=F}
+d %>%
+  mutate(
+    overlap = sprintf(
+      '%s - %s (%0.1f - %0.1f%%)',
+      comma(round(cable2_km2)), comma(round(cable3_km2)), cable2_pct*100, cable3_pct*100)) %>%
+  select(form, energy, depth, area_km2, overlap, cable3_pct) %>%
+  datatable(
+    rownames = F,
+    options = list(
+      dom='t', # off: n_entries/search/paging/ordering
+      pageLength = nrow(d), # ordering=F, 
+      autoWidth = F,
+      columnDefs = list(list(className = 'dt-right', targets = 1:5)))) %>%
+  formatCurrency(
+    #c('area_km2', 'cable2_km2', 'cable3_km2'),
+    c('area_km2'),
+    currency='', digits = 0) %>%
+  formatPercentage(
+    #c('cable2_pct', 'cable3_pct'),
+    c('cable3_pct'),
+    digits=1) %>%
+  formatStyle(
+    'area_km2',
+    background = styleColorBar(d$area_km2, 'gray'),
+    backgroundSize = '100% 90%',
+    backgroundRepeat = 'no-repeat',
+    backgroundPosition = 'center')  %>%
+  formatStyle(
+    'overlap',
+    background = styleColorBar(d$cable3_pct, 'pink'),
+    backgroundSize = '100% 90%',
+    backgroundRepeat = 'no-repeat',
+    backgroundPosition = 'center') %>%
+  formatStyle(
+    'cable3_pct',
+    background = styleColorBar(d$cable3_pct, 'pink'),
+    backgroundSize = '100% 90%',
+    backgroundRepeat = 'no-repeat',
+    backgroundPosition = 'center')
+
+```
+
+
+

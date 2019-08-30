@@ -1,0 +1,6 @@
+territory,depth_factor,energy_factor,area_km2
+US Virgin Islands,<0,0-500,62.93009992028614
+US Virgin Islands,0-100,0-500,1469.6373567430544
+US Virgin Islands,100-200,0-500,47.12440040542357
+US Virgin Islands,"200-1,000",0-500,247.0372294545186
+US Virgin Islands,">1,000",0-500,150.44684353035848

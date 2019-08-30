@@ -1,0 +1,8 @@
+territory,depth_factor,energy_factor,area_km2
+Gulf of Mexico,<0,0-500,1543.2354090110875
+Gulf of Mexico,0-100,0-500,54439.54142343382
+Gulf of Mexico,100-200,0-500,29.400145382465595
+Gulf of Mexico,<0,"500-1,000",3.266682820273955
+Gulf of Mexico,0-100,"500-1,000",33.7557224761642
+Gulf of Mexico,0-100,"1,000-1,500",7.350036345616399
+Gulf of Mexico,0-100,">1,500",2.722235683561629

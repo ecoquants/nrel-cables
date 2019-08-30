@@ -1,0 +1,5 @@
+depth_from,depth_to,depth_mid
+0,100,50
+100,200,150
+200,1e3,600
+1e3,1e4,5e3

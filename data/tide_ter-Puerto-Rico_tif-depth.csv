@@ -1,0 +1,6 @@
+territory,depth_factor,energy_factor,area_km2
+Puerto Rico,<0,0-500,93.57525809752175
+Puerto Rico,0-100,0-500,2702.2780002474956
+Puerto Rico,100-200,0-500,149.7204129560348
+Puerto Rico,"200-1,000",0-500,2310.1391842825683
+Puerto Rico,">1,000",0-500,343.30422814528293

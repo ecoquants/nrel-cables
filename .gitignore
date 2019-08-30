@@ -3,3 +3,6 @@
 .RData
 .Ruserdata
 materials
+tmp
+tmp_dist
+.DS_Store

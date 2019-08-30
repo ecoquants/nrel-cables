@@ -1,0 +1,8 @@
+territory,tide,wave,wind
+Alaska,TRUE,TRUE,NA
+East,TRUE,TRUE,TRUE
+Gulf of Mexico,TRUE,TRUE,TRUE
+Hawaii,NA,TRUE,TRUE
+Puerto Rico,TRUE,TRUE,NA
+US Virgin Islands,TRUE,TRUE,NA
+West,TRUE,TRUE,TRUE
